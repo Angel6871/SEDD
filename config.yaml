@@ -1,0 +1,53 @@
+# RP-1 / 98% H2O2 feasibility study configuration
+
+# ================================
+# Thrust requirement
+# ================================
+F_req_N: 400.0   # Required thrust [N]
+
+# ================================
+# Chamber pressure sweep [bar]
+# ================================
+Pc_bar_list: [5.0, 8.3, 11.7, 15.0]
+
+# ================================
+# Mixture ratio sweep (O/F)
+# ================================
+OF_min: 5.5
+OF_max: 7.5
+OF_points: 41
+
+# ================================
+# Expansion ratio sweep (low altitude 0–5000 m)
+# ================================
+ae_at_list: [4, 6]
+
+# ================================
+# Oxidizer purity (mass fractions)
+# ================================
+H2O2_mass_frac: 0.98
+H2O_mass_frac: 0.02
+
+# ================================
+# Inlet temperatures [K]
+# ================================
+fuel_T_K: 298.15
+ox_T_K: 298.15
+
+# ================================
+# CEA analysis type
+# Options: "equilibrium" or "frozen"
+# ================================
+analysis_type: equilibrium
+
+# ================================
+# Real engine efficiencies (1.0 = ideal)
+# ================================
+eta_cstar: 1.0
+eta_cf: 1.0
+
+# ================================
+# Output control
+# ================================
+output_csv: results.csv
+output_dir: outputs
