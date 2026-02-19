@@ -1,9 +1,10 @@
 # RP-1 / 98% H2O2 feasibility study configuration
+# Edit this file — no Python knowledge required.
 
 # ================================
 # Thrust requirement
 # ================================
-F_req_N: 400.0   # Required thrust [N]
+F_req_N: 500.0   # Required thrust [N]
 
 # ================================
 # Chamber pressure sweep [bar]
@@ -13,14 +14,23 @@ Pc_bar_list: [5.0, 8.3, 11.7, 15.0]
 # ================================
 # Mixture ratio sweep (O/F)
 # ================================
-OF_min: 5.5
+OF_min: 6.5
 OF_max: 7.5
 OF_points: 41
 
 # ================================
-# Expansion ratio sweep (low altitude 0–5000 m)
+# Nozzle design mode
 # ================================
-ae_at_list: [4, 6]
+# mode: "ae_at"  -> you provide a list of expansion ratios (geometry-driven)
+# mode: "pip"    -> you provide exit pressure (Pe_bar) and CEA computes ae/at (sea-level design)
+nozzle_mode: pip
+
+# If nozzle_mode == "pip":
+# Design exit pressure [bar]. Sea level is ~1.01325 bar.
+Pe_bar: 1.01325
+
+# If nozzle_mode == "ae_at":
+# ae_at_list: [4, 6, 8, 10, 12]
 
 # ================================
 # Oxidizer purity (mass fractions)

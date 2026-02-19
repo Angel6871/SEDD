@@ -11,7 +11,7 @@ import os
 import math
 import yaml
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -36,7 +36,16 @@ def feasibility_from_coeffs(
     eta_cf: float = 1.0,
     eta_cstar: float = 1.0,
 ) -> Dict[str, float]:
+    """
+    Convert CEA coefficients (cf, cstar) into geometric + flow requirements.
 
+    Equations used:
+      At = F / ( (eta_cf*cf) * Pc )
+      mdot = Pc*At / (eta_cstar*cstar)
+
+    Units:
+      Pc_bar -> converted to Pa internally.
+    """
     Pc_Pa = Pc_bar * 1e5
 
     cf_eff = eta_cf * cf
@@ -72,22 +81,35 @@ def main() -> None:
 
     # === Create unique run folder ===
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_name = f"run_{timestamp}"
-    run_dir = os.path.join(cfg["output_dir"], run_name)
+    run_dir = os.path.join(cfg["output_dir"], f"run_{timestamp}")
     ensure_dir(run_dir)
 
+    # Save a copy of the config in the run folder for reproducibility
+    with open(os.path.join(run_dir, "config_used.yaml"), "w", encoding="utf-8") as f:
+        yaml.safe_dump(cfg, f, sort_keys=False)
+
     OF_list = np.linspace(cfg["OF_min"], cfg["OF_max"], cfg["OF_points"])
+
+    nozzle_mode = str(cfg.get("nozzle_mode", "ae_at")).strip().lower()
+    Pe_bar = float(cfg.get("Pe_bar", 1.01325))
 
     rows: List[Dict[str, Any]] = []
 
     for Pc_bar in cfg["Pc_bar_list"]:
-        for ae_at in cfg["ae_at_list"]:
-            for OF in OF_list:
+        # Build nozzle cases for this Pc
+        if nozzle_mode == "pip":
+            # Sea-level design: enforce Pe = Pe_bar, so pip = Pc/Pe
+            nozzle_cases: List[Tuple[Optional[float], Optional[float]]] = [(None, float(Pc_bar) / Pe_bar)]
+        else:
+            nozzle_cases = [(float(ae), None) for ae in cfg["ae_at_list"]]
 
+        for ae_at, pip in nozzle_cases:
+            for OF in OF_list:
                 r = run_rocket_case(
                     Pc_bar=float(Pc_bar),
                     OF=float(OF),
-                    ae_at=float(ae_at),
+                    ae_at=ae_at,
+                    pip=pip,
                     analysis_type=cfg["analysis_type"],
                     fuel_T_K=cfg["fuel_T_K"],
                     ox_T_K=cfg["ox_T_K"],
@@ -99,14 +121,16 @@ def main() -> None:
                     "F_req_N": float(cfg["F_req_N"]),
                     "eta_cf": float(cfg["eta_cf"]),
                     "eta_cstar": float(cfg["eta_cstar"]),
+                    "nozzle_mode": nozzle_mode,
+                    "Pe_design_bar": (Pe_bar if nozzle_mode == "pip" else None),
                 })
 
-                if r.get("cf") is not None and r.get("cstar_m_s") is not None:
+                if r.get("cf") is not None and r.get("cstar_m_s") is not None and r.get("ae_at") is not None:
                     feas = feasibility_from_coeffs(
                         F_req_N=float(cfg["F_req_N"]),
                         Pc_bar=float(Pc_bar),
                         OF=float(OF),
-                        ae_at=float(ae_at),
+                        ae_at=float(r["ae_at"]),  # Ae/At ratio from CEA (or equals input in geometry mode)
                         cf=float(r["cf"]),
                         cstar_m_s=float(r["cstar_m_s"]),
                         eta_cf=float(cfg["eta_cf"]),
@@ -122,17 +146,20 @@ def main() -> None:
     results_path = os.path.join(run_dir, cfg["output_csv"])
     df.to_csv(results_path, index=False)
 
-    # Summary file
+    # Summary file (best O/F by minimum mdot)
     if "mdot_kg_s" in df.columns:
+        group_cols = ["Pc_bar"] if nozzle_mode == "pip" else ["Pc_bar", "ae_at"]
         summary = (
             df.dropna(subset=["mdot_kg_s"])
               .sort_values("mdot_kg_s")
-              .groupby(["Pc_bar", "ae_at"], as_index=False)
-              .first()[["Pc_bar", "ae_at", "OF", "Tc_K", "cf", "cstar_m_s", "ivac_s", "mdot_kg_s", "dt_m", "de_m"]]
+              .groupby(group_cols, as_index=False)
+              .first()
         )
-        summary.to_csv(os.path.join(run_dir, "best_by_mdot.csv"), index=False)
+        keep = ["Pc_bar", "ae_at", "Pe_bar", "pip", "OF", "Tc_K", "cf", "cstar_m_s", "ivac_s", "mdot_kg_s", "dt_m", "de_m"]
+        keep = [c for c in keep if c in summary.columns]
+        summary[keep].to_csv(os.path.join(run_dir, "best_by_mdot.csv"), index=False)
 
-    # Generate plots inside run folder
+    # Plots
     generate_all_plots(df, run_dir)
 
     print("Study completed.")
