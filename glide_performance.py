@@ -54,7 +54,7 @@ if __name__ == "__main__":
     distance_m = distance_km * 1000.0
 
     # Example: print required altitude for a single CL/CD
-    cl_cd_example = 15.0
+    cl_cd_example = 17.2
     alt_needed = required_altitude_m(distance_m, cl_cd_example, safety_margin=safety_margin)
     print(f"Altitude required for {distance_km:.1f} km at CL/CD={cl_cd_example:.1f}: {alt_needed:.1f} m")
 
