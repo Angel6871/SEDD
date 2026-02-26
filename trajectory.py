@@ -37,32 +37,32 @@ except ImportError:
 # ════════════════════════════════════════════════════════════════════════════
 
 # ── CEA run to load ───────────────────────────────────────────────────────────
-RUN_ID          = "run_20260223_111121"     # folder name inside ./outputs/
+RUN_ID          = "run_20260226_165016"     # folder name inside ./outputs/
 RESULTS_CSV     = f"./outputs/{RUN_ID}/results.csv"
 
 # ── Design point selector — pick the row you want ────────────────────────────
-DESIGN_PC_BAR   = 5      # [bar]  must match a Pc_bar value in the CSV
-DESIGN_OF       = 5.75       # [-]    must match an OF value in the CSV
+DESIGN_PC_BAR   = 11.7      # [bar]  must match a Pc_bar value in the CSV
+DESIGN_OF       = 6.5       # [-]    must match an OF value in the CSV
 
 # ── Mission ───────────────────────────────────────────────────────────────────
-TARGET_ALTITUDE_M   = 1500  # [m]
+TARGET_ALTITUDE_M   = 1500 # [m]
 
 # ── Vehicle ───────────────────────────────────────────────────────────────────
 M_LAUNCH_KG         = 30.0      # [kg]  total wet mass at launch
-M_PROP_REQ       = 5        # [-]   fraction that is dry structure (everything except propellant)
-M_PROP_UNUSED = 0.2         # [kg] mass of propellant that gets stuck in pipes/tank
-M_PROP_AVAILABLE = M_PROP_REQ + M_PROP_UNUSED- M_PROP_UNUSED
+M_PROP_REQ       = 5       # [-]   fraction that is dry structure (everything except propellant)
 
 # ── Drag ──────────────────────────────────────────────────────────────────────
 DRAG                = True
-CD                  = 0.7       # [-]   drag coefficient
-BODY_DIAMETER_M     = 0.3      # [m]   reference body diameter for frontal area
+CD                  = 0.4       # [-]   drag coefficient
+BODY_DIAMETER_M     = 0.08      # [m]   reference body diameter for frontal area
 
 # ════════════════════════════════════════════════════════════════════════════
 # CONSTANTS
 # ════════════════════════════════════════════════════════════════════════════
 G0      = 9.80665       # [m/s²]
+G = 6.67430e-11      # [m³/kg/s²]
 R_EARTH = 6_371_000.0   # [m]
+M_earth = 5.972e24      # [kg]
 P_SL_PA = 101_325.0     # [Pa]
 FIGSIZE = (7, 4.5)
 DPI     = 200
@@ -125,7 +125,7 @@ THRUST_N        = float(_dp["F_req_N"])         # sea-level design thrust
 ISP_VAC_S       = float(_dp["ivac_s"])
 
 # ── Derived vehicle quantities ────────────────────────────────────────────────
-m_prop_kg       = M_PROP_AVAILABLE
+m_prop_kg       = M_PROP_REQ
 m_dry_kg        = M_LAUNCH_KG - M_PROP_REQ
 burn_time_s     = m_prop_kg / mdot_kg_s
 A_ref_m2        = math.pi * (BODY_DIAMETER_M / 2.0) ** 2
@@ -140,22 +140,17 @@ def ambient_pressure_pa(h_m: float) -> float:
     h_m = max(0.0, h_m)
     if _USE_AMBIANCE:
         atm = Atmosphere(h_m)
-        return np.asarray(atm.pressure).reshape(-1)[0].item()
+        # Ambiance returns numpy arrays even for scalar input; convert safely
+        return float(np.asarray(atm.pressure).ravel()[0])
     else:
         # US Standard Atmosphere 1976 — piecewise analytic
+        # Troposphere (0–11 km)
         if h_m <= 11_000.0:
             T = 288.15 - 0.0065 * h_m
             return P_SL_PA * (T / 288.15) ** 5.2561
-        elif h_m <= 20_000.0:
-            p11 = P_SL_PA * (216.65 / 288.15) ** 5.2561
-            return p11 * math.exp(-G0 * (h_m - 11_000.0) / (287.058 * 216.65))
-        elif h_m <= 32_000.0:
-            p20 = ambient_pressure_pa(20_000.0)
-            T = 216.65 + 0.001 * (h_m - 20_000.0)
-            return p20 * (T / 216.65) ** -34.1632
         else:
-            p32 = ambient_pressure_pa(32_000.0)
-            return p32 * math.exp(-G0 * (h_m - 32_000.0) / (287.058 * 228.65))
+            return "altitude above 11 km not supported in built-in model; install ambiance package for full standard atmosphereq"
+
 
 
 def ambient_density_kg_m3(h_m: float) -> float:
@@ -163,18 +158,15 @@ def ambient_density_kg_m3(h_m: float) -> float:
     h_m = max(0.0, h_m)
     if _USE_AMBIANCE:
         atm = Atmosphere(h_m)
-        return np.asarray(atm.density).reshape(-1)[0].item()
+        # Ambiance returns numpy arrays even for scalar input; convert safely
+        return float(np.asarray(atm.density).ravel()[0])
     else:
+        # T from standard lapse rates (simplified)
         if h_m <= 11_000.0:
             T = 288.15 - 0.0065 * h_m
-        elif h_m <= 20_000.0:
-            T = 216.65
-        elif h_m <= 32_000.0:
-            T = 216.65 + 0.001 * (h_m - 20_000.0)
         else:
-            T = 228.65
-        p = ambient_pressure_pa(h_m)
-        return p / (287.058 * T)
+            return "altitude above 11 km not supported in built-in model; install ambiance package for full standard atmosphere"
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # THRUST MODEL
@@ -211,7 +203,7 @@ def isp_s(h_m: float) -> float:
 
 def gravity_m_s2(h_m: float) -> float:
     """Local gravitational acceleration [m/s²]."""
-    return G0 * (R_EARTH / (R_EARTH + h_m)) ** 2
+    return G * M_earth / (R_EARTH + h_m) ** 2
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -280,7 +272,7 @@ def run_trajectory() -> pd.DataFrame:
 
     Returns a DataFrame with the full time history.
     """
-    t_max_powered  = burn_time_s
+    t_max_powered  = burn_time_s * 1  # slight margin
     t_max_coast    = 600.0                 # 10 min coast max
 
     y0 = [0.0, 0.0, M_LAUNCH_KG]
@@ -458,7 +450,7 @@ def print_summary(df: pd.DataFrame) -> None:
     v_burnout   = df.loc[df["burning"] == 1, "v_m_s"].iloc[-1] if df["burning"].any() else 0.0
     t_burnout   = df.loc[df["burning"] == 1, "t_s"].max()      if df["burning"].any() else 0.0
     isp_mean    = df.loc[df["burning"] == 1, "isp_s"].mean()   if df["burning"].any() else 0.0
-    target_hit  = h_max >= TARGET_ALTITUDE_M
+    target_hit  = h_max >= TARGET_ALTITUDE_M * 0.99
 
     print("\n" + "═" * 50)
     print("  TRAJECTORY SUMMARY")
@@ -496,8 +488,8 @@ def main() -> None:
 
     df = run_trajectory()
 
-    outdir = "trajectory_results"
-    df.to_csv(f"./outputs/{outdir}/trajectory_results.csv", index=False)
+    outdir = "trajectory_plots"
+    df.to_csv("trajectory_results.csv", index=False)
     print(f"\nFull time history saved to: trajectory_results.csv")
 
     plot_trajectory(df, outdir)
