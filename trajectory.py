@@ -50,7 +50,8 @@ TARGET_ALTITUDE_M   = 1500 # [m]
 # ── Vehicle ───────────────────────────────────────────────────────────────────
 M_LAUNCH_KG         = 30.0      # [kg]  total wet mass at launch
 M_PROP_REQ       = 5       # [-]   fraction that is dry structure (everything except propellant)
-
+M_PROP_UNUSED = 0.2         # [kg] mass of propellant that gets stuck in pipes/tank
+M_PROP_AVAILABLE = M_PROP_REQ + M_PROP_UNUSED- M_PROP_UNUSED  # [kg] mass of propellant that can actually be burned (accounting for unusable fraction)
 # ── Drag ──────────────────────────────────────────────────────────────────────
 DRAG                = True
 CD                  = 0.4       # [-]   drag coefficient
