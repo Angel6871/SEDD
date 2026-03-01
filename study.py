@@ -78,10 +78,18 @@ def ensure_dir(path: str) -> None:
 
 def main() -> None:
     cfg = load_config("config.yaml")
+    print(
+        "Config sweep:",
+        f"OF=[{cfg['OF_min']}, {cfg['OF_max']}]",
+        f"points={cfg['OF_points']}",
+        f"mode={cfg.get('nozzle_mode', 'ae_at')}",
+    )
 
-    # === Create unique run folder ===
+    # === Create run folder ===
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = os.path.join(cfg["output_dir"], f"run_{timestamp}")
+    configured_run_name = str(cfg.get("run_name", "")).strip()
+    run_name = configured_run_name or f"run_{timestamp}"
+    run_dir = os.path.join(cfg["output_dir"], run_name)
     ensure_dir(run_dir)
 
     # Save a copy of the config in the run folder for reproducibility
@@ -111,6 +119,8 @@ def main() -> None:
                     ae_at=ae_at,
                     pip=pip,
                     analysis_type=cfg["analysis_type"],
+                    nfz=cfg.get("nfz"),
+                    custom_nfz=cfg.get("custom_nfz"),
                     fuel_T_K=cfg["fuel_T_K"],
                     ox_T_K=cfg["ox_T_K"],
                     h2o2_mass_frac=cfg["H2O2_mass_frac"],

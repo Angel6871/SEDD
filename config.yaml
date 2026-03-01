@@ -14,7 +14,7 @@ Pc_bar_list: [5.0, 8.3, 11.7, 15.0]
 # ================================
 # Mixture ratio sweep (O/F)
 # ================================
-OF_min: 6.5
+OF_min: 5.5
 OF_max: 7.5
 OF_points: 41
 
@@ -46,9 +46,24 @@ ox_T_K: 298.15
 
 # ================================
 # CEA analysis type
-# Options: "equilibrium" or "frozen"
+# Base options:
+#   "equilibrium"
+#   "frozen"
+#
+# Frozen-location controls (optional):
+#   nfz: 1          -> freeze composition at chamber
+#   nfz: 2          -> freeze composition at throat
+#   custom_nfz: x   -> custom freeze location (CEA_Wrap custom option)
+#
+# Examples:
+#   analysis_type: equilibrium
+#   analysis_type: frozen
+#   analysis_type: frozen
+#   nfz: 2
 # ================================
-analysis_type: equilibrium
+analysis_type: frozen
+nfz: 2
+# custom_nfz: 0.0
 
 # ================================
 # Real engine efficiencies (1.0 = ideal)
@@ -61,3 +76,6 @@ eta_cf: 1.0
 # ================================
 output_csv: results.csv
 output_dir: outputs
+# Optional custom run folder name inside output_dir.
+# Leave empty or remove to auto-use: run_YYYYMMDD_HHMMSS
+run_name: frozen_throat_run

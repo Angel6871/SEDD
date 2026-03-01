@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import math
+import glob
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -37,8 +38,10 @@ except ImportError:
 # ════════════════════════════════════════════════════════════════════════════
 
 # ── CEA run to load ───────────────────────────────────────────────────────────
-RUN_ID          = "run_20260226_165016"     # folder name inside ./outputs/
-RESULTS_CSV     = f"./outputs/{RUN_ID}/results.csv"
+# Set RUN_ID to a specific folder (e.g. "run_20260301_171145") to pin a run.
+# Leave as None to automatically use the latest run_* folder in ./outputs.
+RUN_ID          = None
+OUTPUTS_DIR     = "./outputs"
 
 # ── Design point selector — pick the row you want ────────────────────────────
 DESIGN_PC_BAR   = 11.7      # [bar]  must match a Pc_bar value in the CSV
@@ -71,6 +74,44 @@ DPI     = 200
 # ════════════════════════════════════════════════════════════════════════════
 # LOAD DESIGN POINT FROM CEA RESULTS CSV
 # ════════════════════════════════════════════════════════════════════════════
+
+def resolve_results_csv(outputs_dir: str, run_id: str | None, Pc_bar: float, OF: float) -> str:
+    """Return a results.csv path that contains the requested (Pc_bar, OF) design point."""
+    if run_id:
+        csv_path = os.path.join(outputs_dir, run_id, "results.csv")
+        if not os.path.isfile(csv_path):
+            raise FileNotFoundError(f"results.csv not found for RUN_ID={run_id}: {csv_path}")
+        return csv_path
+
+    run_dirs = sorted(
+        d for d in glob.glob(os.path.join(outputs_dir, "run_*"))
+        if os.path.isdir(d)
+    )
+    if not run_dirs:
+        raise FileNotFoundError(f"No run_* folders found in {outputs_dir}. Run study.py first.")
+
+    # Pick the newest run that contains the requested design point.
+    for run_dir in reversed(run_dirs):
+        csv_path = os.path.join(run_dir, "results.csv")
+        if not os.path.isfile(csv_path):
+            continue
+        try:
+            df = pd.read_csv(csv_path)
+        except Exception:
+            continue
+
+        mask = (
+            np.isclose(df["Pc_bar"].astype(float), Pc_bar, rtol=1e-4) &
+            np.isclose(df["OF"].astype(float), OF, rtol=1e-4)
+        )
+        if mask.any():
+            return csv_path
+
+    latest_run = run_dirs[-1]
+    raise FileNotFoundError(
+        f"No run in {outputs_dir} contains Pc_bar={Pc_bar}, OF={OF}. "
+        f"Latest run is {latest_run}. Set RUN_ID manually or regenerate study results."
+    )
 
 def load_design_point(csv_path: str, Pc_bar: float, OF: float) -> pd.Series:
     """
@@ -111,6 +152,7 @@ def load_design_point(csv_path: str, Pc_bar: float, OF: float) -> pd.Series:
 
 
 # ── Load at module level so all functions below can reference these globals ──
+RESULTS_CSV     = resolve_results_csv(OUTPUTS_DIR, RUN_ID, DESIGN_PC_BAR, DESIGN_OF)
 _dp             = load_design_point(RESULTS_CSV, DESIGN_PC_BAR, DESIGN_OF)
 
 OF              = float(_dp["OF"])
@@ -481,6 +523,7 @@ def print_summary(df: pd.DataFrame) -> None:
 
 def main() -> None:
     print("Running trajectory simulation...")
+    print(f"  Results CSV   : {RESULTS_CSV}")
     print(f"  Launch mass   : {M_LAUNCH_KG} kg")
     print(f"  Propellant    : {m_prop_kg:.2f} kg  (burn time ≈ {burn_time_s:.1f} s)")
     print(f"  Target alt    : {TARGET_ALTITUDE_M/1000:.1f} km")
