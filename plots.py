@@ -54,6 +54,44 @@ def _set_of_xlim(ax: plt.Axes, df: pd.DataFrame) -> None:
             ax.set_xlim(of_min, of_max)
 
 
+def _reaction_label(df: pd.DataFrame) -> str:
+    """Return a normalized reaction label for plot titles."""
+    if "analysis_type" not in df.columns:
+        return "unknown"
+
+    types = (
+        df["analysis_type"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .unique()
+    )
+    if len(types) != 1:
+        return "mixed"
+
+    analysis_type = types[0]
+    if analysis_type == "equilibrium":
+        return "Full Equilibrium"
+    if analysis_type != "frozen":
+        return analysis_type
+
+    if "nfz" in df.columns:
+        nfz_vals = pd.to_numeric(df["nfz"], errors="coerce").dropna().unique()
+        if len(nfz_vals) == 1:
+            nfz = int(nfz_vals[0])
+            if nfz == 1:
+                return "Frozen Chamber"
+            if nfz == 2:
+                return "Frozen Throat"
+
+    return "frozen"
+
+
+def _title_with_reaction(base_title: str, df: pd.DataFrame) -> str:
+    return f"{base_title}\n(reaction type: {_reaction_label(df)})"
+
+
 # ── Helpers shared by both modes ─────────────────────────────────────────────
 
 def plot_tc_vs_of(df: pd.DataFrame, outdir: str) -> str:
@@ -68,7 +106,7 @@ def plot_tc_vs_of(df: pd.DataFrame, outdir: str) -> str:
     _set_of_xlim(ax, d)
     ax.set_xlabel("O/F  [–]")
     ax.set_ylabel("Chamber temperature  Tc  [K]")
-    ax.set_title("Chamber temperature vs O/F\n(98 % H₂O₂ / RP-1)")
+    ax.set_title(_title_with_reaction("Chamber temperature vs O/F\n(98 % H₂O₂ / RP-1)", d))
     ax.legend()
     ax.grid(True, linestyle="--", alpha=0.4)
     fig.tight_layout()
@@ -91,7 +129,7 @@ def plot_cstar_vs_of(df: pd.DataFrame, outdir: str) -> str:
     _set_of_xlim(ax, d)
     ax.set_xlabel("O/F  [–]")
     ax.set_ylabel("Characteristic velocity  c*  [m/s]")
-    ax.set_title("c* vs O/F\n(98 % H₂O₂ / RP-1)")
+    ax.set_title(_title_with_reaction("c* vs O/F\n(98 % H₂O₂ / RP-1)", d))
     ax.legend()
     ax.grid(True, linestyle="--", alpha=0.4)
     fig.tight_layout()
