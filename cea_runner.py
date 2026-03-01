@@ -45,6 +45,8 @@ def run_rocket_case(
     ae_at: Optional[float] = None,
     pip: Optional[float] = None,
     analysis_type: str = "equilibrium",
+    nfz: Optional[int] = None,
+    custom_nfz: Optional[float] = None,
     fuel_T_K: float = 298.15,
     ox_T_K: float = 298.15,
     h2o2_mass_frac: float = 0.98,
@@ -63,6 +65,8 @@ def run_rocket_case(
     - Sea-level ideally-expanded design: set pip = Pc/Pe with Pe≈1.01325 bar.
       CEA will compute the corresponding area ratio 'ae' (Ae/At).
     - CEA_Wrap output key 'ae' is the ratio Ae/At. (Not absolute area.)
+    - analysis_type supports standard CEA_Wrap options such as:
+      "equilibrium", "frozen", and frozen variants using nfz/custom_nfz.
     """
     if (ae_at is None) == (pip is None):
         raise ValueError("Specify exactly one of ae_at or pip (not both).")
@@ -89,6 +93,10 @@ def run_rocket_case(
         kwargs["ae_at"] = float(ae_at)
     if pip is not None:
         kwargs["pip"] = float(pip)
+    if nfz is not None:
+        kwargs["nfz"] = int(nfz)
+    if custom_nfz is not None:
+        kwargs["custom_nfz"] = float(custom_nfz)
 
     prob = RocketProblem(**kwargs)
     data = prob.run_cea()
@@ -97,6 +105,8 @@ def run_rocket_case(
         "Pc_bar": Pc_bar,
         "OF": OF,
         "analysis_type": analysis_type,
+        "nfz": nfz,
+        "custom_nfz": custom_nfz,
         "Tc_K": getattr(data, "c_t", None),
         "cstar_m_s": getattr(data, "cstar", None),
         "cf": getattr(data, "cf", None),
