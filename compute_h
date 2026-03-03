@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""
+Convective heat-transfer coefficients using CEA_Wrap throat transport only.
+
+- Reads results.csv with pandas
+- Selects one row (by Pc_bar & OF if set, else min mdot_kg_s)
+- Re-runs CEA_Wrap with analysis_type="frozen", nfz=2 (frozen at throat)
+- Uses CEA throat transport (t_visc, t_cond, t_pran, t_cp) in simplified Bartz h_g
+- Computes coolant-side h for fuel/ox channels
+
+No CLI, no dataclasses, no fallback gas transport model.
+"""
+
+import math
+import pandas as pd
+
+# =============================
+# SETTINGS (EDIT THESE)
+# =============================
+
+RESULTS_CSV = "outputs/frozen_throat/results.csv"
+
+# Row selection (exact match). If either is None -> min mdot_kg_s row.
+SELECT_PC_BAR = 5  # e.g. 20.0
+SELECT_OF = 4.15      # e.g. 2.4
+
+from cea_runner import build_materials_rp1_h2o2  
+
+# Propellant inlet temperatures and peroxide purity
+FUEL_T_K = 298.15
+OX_T_K = 298.15
+H2O2_MASS_FRAC = 0.98
+H2O_MASS_FRAC = 0.02
+
+# Bartz geometry assumption
+RC_OVER_RT = 1.5
+
+# Channel geometry (mm, mm, m, count)
+FUEL_GEOM = {"w_mm": 1.0, "h_mm": 1.5, "L_m": 0.20, "N": 60}
+OX_GEOM   = {"w_mm": 1.0, "h_mm": 1.5, "L_m": 0.20, "N": 60}
+
+# Coolant properties (example defaults)
+FUEL = {"rho": 810.0,  "mu": 1.8e-3, "cp": 2100.0, "k": 0.13}
+OX   = {"rho": 1380.0, "mu": 1.2e-3, "cp": 2700.0, "k": 0.50}
+
+# =============================
+
+
+def mm_to_m(x):
+    return x * 1e-3
+
+
+def select_row(df):
+    if SELECT_PC_BAR is not None and SELECT_OF is not None:
+        sub = df[(df["Pc_bar"] == SELECT_PC_BAR) & (df["OF"] == SELECT_OF)]
+        if sub.empty:
+            raise ValueError("No row found for selected Pc_bar and OF (exact match).")
+        return sub.iloc[0]
+
+    if "mdot_kg_s" not in df.columns:
+        raise ValueError("Column mdot_kg_s not found for automatic selection.")
+    return df.loc[df["mdot_kg_s"].idxmin()]
+
+
+def run_cea_throat_props(pc_bar, of):
+    """
+    Run CEA_Wrap for ONE case and return throat transport properties.
+
+    Uses: analysis_type="frozen", nfz=2 (frozen at throat)
+    """
+    try:
+        from CEA_Wrap import RocketProblem
+    except Exception as e:
+        raise RuntimeError(
+            "CEA_Wrap import failed. Install/upgrade it with:\n"
+            "  pip install --upgrade CEA_Wrap\n"
+            f"Original error: {e}"
+        )
+
+    mats = build_materials_rp1_h2o2(
+        fuel_T_K=FUEL_T_K,
+        ox_T_K=OX_T_K,
+        h2o2_mass_frac=H2O2_MASS_FRAC,
+        h2o_mass_frac=H2O_MASS_FRAC,
+    )
+
+    prob = RocketProblem(
+        pressure=float(pc_bar),
+        pressure_units="bar",
+        materials=[mats["fuel"], mats["ox_h2o2"], mats["ox_h2o"]],
+        o_f=float(of),
+        analysis_type="frozen",
+        nfz=2,
+    )
+
+    data = prob.run_cea()
+
+    # CEA_Wrap often returns an object with attributes (as in your reference file),
+    # but also supports dict-like access in some cases. We'll use getattr.
+    # Required throat transport keys:
+    #   t_visc [Pa*s], t_cond [W/mK], t_pran [-], t_cp [kJ/kgK], t_t [K]
+    required_attrs = ["t_visc", "t_cond", "t_pran", "t_cp", "t_t", "t_gamma", "t_mw"]
+    missing = [k for k in required_attrs if getattr(data, k, None) is None]
+    if missing:
+        raise RuntimeError(
+            f"CEA output missing required throat fields: {missing}\n"
+            "Check that your CEA_Wrap version supports transport properly (>= 2.1 recommended)."
+        )
+
+    return {
+        "mu": float(getattr(data, "t_visc")),
+        "k": float(getattr(data, "t_cond")),
+        "Pr": float(getattr(data, "t_pran")),
+        "cp": float(getattr(data, "t_cp")) * 1000.0,  # kJ/kgK -> J/kgK
+        "Tt": float(getattr(data, "t_t")),
+        "gamma": float(getattr(data, "t_gamma")),
+        "mw": float(getattr(data, "t_mw")),
+    }
+
+
+def hot_gas_h_bartz(Pc_Pa, cstar, dt, mu, cp, Pr):
+    """
+    Simplified Bartz-style estimate at throat:
+
+      h_g = 0.026 / D_t^0.2 * (mu^0.2 * cp / Pr^0.6) * (Pc/c*)^0.8 * (D_t/R_c)^0.1
+    """
+    rt = 0.5 * dt
+    rc = max(RC_OVER_RT, 1.0) * rt
+    return (
+        0.026
+        * (mu ** 0.2)
+        * (cp / (Pr ** 0.6))
+        * ((Pc_Pa / cstar) ** 0.8)
+        * ((dt / rc) ** 0.1)
+        / (dt ** 0.2)
+    )
+
+
+def coolant_h(mdot_total, fluid, geom):
+    w = mm_to_m(geom["w_mm"])
+    h = mm_to_m(geom["h_mm"])
+    L = geom["L_m"]
+    N = geom["N"]
+    if N <= 0:
+        raise ValueError("Channel count N must be > 0")
+
+    A = w * h
+    Dh = 2.0 * w * h / (w + h)
+
+    mdot_ch = mdot_total / N
+    v = mdot_ch / (fluid["rho"] * A)
+
+    Re = fluid["rho"] * v * Dh / fluid["mu"]
+    Pr = fluid["cp"] * fluid["mu"] / fluid["k"]
+
+    if Re >= 3000.0:
+        f = (0.79 * math.log(Re) - 1.64) ** -2
+        Nu = ((f / 8.0) * (Re - 1000.0) * Pr) / (
+            1.0 + 12.7 * math.sqrt(f / 8.0) * (Pr ** (2.0 / 3.0) - 1.0)
+        )
+    else:
+        gzl = max(Re * Pr * Dh / max(L, 1e-6), 1e-12)
+        Nu = 1.86 * (gzl ** (1.0 / 3.0))
+
+    h_coeff = Nu * fluid["k"] / Dh
+    return {"h": h_coeff, "Re": Re, "Pr": Pr, "Nu": Nu, "v": v, "Dh": Dh}
+
+
+def main():
+    df = pd.read_csv(RESULTS_CSV)
+    row = select_row(df)
+
+    Pc_bar = float(row["Pc_bar"])
+    OF = float(row["OF"])
+    cstar = float(row["cstar_m_s"])
+    dt = float(row["dt_m"])
+    mdot_fuel = float(row["mdot_fuel_kg_s"])
+    mdot_ox = float(row["mdot_ox_kg_s"])
+
+    # --- CEA throat transport (frozen at throat) ---
+    cea = run_cea_throat_props(Pc_bar, OF)
+
+    # --- Gas-side h_g ---
+    h_g = hot_gas_h_bartz(
+        Pc_Pa=Pc_bar * 1e5,
+        cstar=cstar,
+        dt=dt,
+        mu=cea["mu"],
+        cp=cea["cp"],
+        Pr=cea["Pr"],
+    )
+
+    # --- Coolant side ---
+    fuel_res = coolant_h(mdot_fuel, FUEL, FUEL_GEOM)
+    ox_res = coolant_h(mdot_ox, OX, OX_GEOM)
+
+    print("\n=== Convective Coefficient Estimate (CEA frozen @ throat, nfz=2) ===\n")
+    print(f"Row: Pc={Pc_bar:.4g} bar, OF={OF:.4g}\n")
+
+    print("CEA throat properties used:")
+    print(f"  Tt    = {cea['Tt']:.2f} K")
+    print(f"  mu    = {cea['mu']:.3e} Pa*s")
+    print(f"  k     = {cea['k']:.3f} W/(m*K)")
+    print(f"  Pr    = {cea['Pr']:.3f}")
+    print(f"  cp    = {cea['cp']:.0f} J/(kg*K)")
+    print(f"  gamma = {cea['gamma']:.6g}")
+    print(f"  mw    = {cea['mw']:.6g} kg/kmol\n")
+
+    print("Hot-gas side (simplified Bartz):")
+    print(f"  h_gas = {h_g:.3f} W/(m^2*K)\n")
+
+    print("Fuel-side coolant channels:")
+    print(f"  h = {fuel_res['h']:.3f} W/(m^2*K)")
+    print(f"  Re={fuel_res['Re']:.3g}, Pr={fuel_res['Pr']:.3g}, Nu={fuel_res['Nu']:.3g}, v={fuel_res['v']:.3f} m/s, Dh={fuel_res['Dh']*1e3:.3f} mm\n")
+
+    print("Ox-side coolant channels:")
+    print(f"  h = {ox_res['h']:.3f} W/(m^2*K)")
+    print(f"  Re={ox_res['Re']:.3g}, Pr={ox_res['Pr']:.3g}, Nu={ox_res['Nu']:.3g}, v={ox_res['v']:.3f} m/s, Dh={ox_res['Dh']*1e3:.3f} mm\n")
+
+
+if __name__ == "__main__":
+    main()
