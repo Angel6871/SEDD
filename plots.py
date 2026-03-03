@@ -102,6 +102,55 @@ def _thrust_label(df: pd.DataFrame) -> str:
     return f"F_req = {float(vals[0]):g} N"
 
 
+def _efficiency_label(df: pd.DataFrame) -> str:
+    """Return eta labels for the two active correction factors."""
+    if "eta_cf" not in df.columns or "eta_cstar" not in df.columns:
+        return "η_cf/η_c* unknown"
+    eta_cf_vals = pd.to_numeric(df["eta_cf"], errors="coerce").dropna().unique()
+    eta_cs_vals = pd.to_numeric(df["eta_cstar"], errors="coerce").dropna().unique()
+    if len(eta_cf_vals) == 1 and len(eta_cs_vals) == 1:
+        return f"η_cf = {float(eta_cf_vals[0]):g}, η_c* = {float(eta_cs_vals[0]):g}"
+    return "η_cf/η_c* mixed"
+
+
+def _trend_with_pc(df: pd.DataFrame, col: str, scale: float = 1.0) -> str:
+    """Trend of quantity with increasing Pc based on per-Pc means."""
+    rows = []
+    for pc, g in df.groupby("Pc_bar"):
+        y = pd.to_numeric(g[col], errors="coerce").dropna()
+        if len(y) == 0:
+            continue
+        rows.append((float(pc), float((y * scale).mean())))
+    if len(rows) < 2:
+        return "flat"
+    rows = sorted(rows, key=lambda t: t[0])
+    x = np.array([r[0] for r in rows], dtype=float)
+    y = np.array([r[1] for r in rows], dtype=float)
+    slope = np.polyfit(x, y, 1)[0]
+    tol = 1e-12 * max(1.0, np.nanmax(np.abs(y)))
+    if slope > tol:
+        return "increasing"
+    if slope < -tol:
+        return "decreasing"
+    return "flat"
+
+
+def _draw_pc_trend_line(ax: plt.Axes, trend: str, subtitle: str = "") -> None:
+    """Draw a small trend glyph in axes coords."""
+    x0, x1 = 0.72, 0.89
+    if trend == "increasing":
+        y0, y1 = 0.12, 0.22
+        t = "Pc trend: increasing"
+    elif trend == "decreasing":
+        y0, y1 = 0.22, 0.12
+        t = "Pc trend: decreasing"
+    else:
+        y0, y1 = 0.17, 0.17
+        t = "Pc trend: flat"
+    ax.plot([x0, x1], [y0, y1], transform=ax.transAxes, color="black", linewidth=2.0, solid_capstyle="round")
+    ax.text(0.70, 0.06, t if not subtitle else f"{t}\n{subtitle}", transform=ax.transAxes, fontsize=8)
+
+
 # ── Helpers shared by both modes ─────────────────────────────────────────────
 
 def plot_tc_vs_of(df: pd.DataFrame, outdir: str) -> str:
@@ -201,6 +250,9 @@ def _plot_quantity_pip_mode(
     fname: str,
     scale: float = 1.0,
     title_suffix: str = "",
+    pc_legend_limit: int = 5,
+    legend_title: str = "",
+    show_pc_trend_when_many: bool = True,
 ) -> str:
     """
     Single plot with one curve per Pc (pip mode).
@@ -217,7 +269,13 @@ def _plot_quantity_pip_mode(
     ax.set_xlabel("O/F  [–]")
     ax.set_ylabel(ylabel)
     ax.set_title(title + title_suffix)
-    ax.legend()
+    pc_count = int(pd.to_numeric(d["Pc_bar"], errors="coerce").dropna().nunique())
+    if pc_count <= pc_legend_limit:
+        ax.legend(title=(legend_title if legend_title else None))
+    else:
+        if show_pc_trend_when_many:
+            trend = _trend_with_pc(d, col=col, scale=scale)
+            _draw_pc_trend_line(ax, trend, subtitle=(legend_title if legend_title else ""))
     ax.grid(True, linestyle="--", alpha=0.4)
     fig.tight_layout()
 
@@ -247,6 +305,7 @@ def plot_aeat_vs_of_pip(df: pd.DataFrame, outdir: str) -> str:
 def plot_mdot_vs_of(df: pd.DataFrame, outdir: str) -> list[str] | str:
     mode = _nozzle_mode(df)
     suffix = f"\n({_thrust_label(df)})"
+    eff = _efficiency_label(df)
     if mode == "pip":
         return _plot_quantity_pip_mode(
             df=df.dropna(subset=["mdot_kg_s"]),
@@ -256,6 +315,7 @@ def plot_mdot_vs_of(df: pd.DataFrame, outdir: str) -> list[str] | str:
             title="Required mass flow vs O/F\n(sea-level ideal expansion)",
             fname="mdot_vs_OF_pip.png",
             title_suffix=suffix,
+            legend_title=eff,
         )
     else:
         return _plot_quantity_aeat_mode(
@@ -272,6 +332,7 @@ def plot_mdot_vs_of(df: pd.DataFrame, outdir: str) -> list[str] | str:
 def plot_exit_diameter_vs_of(df: pd.DataFrame, outdir: str) -> list[str] | str:
     mode = _nozzle_mode(df)
     suffix = f"\n({_thrust_label(df)})"
+    eff = _efficiency_label(df)
     d_de = df.copy()
     d_de["de_m"] = pd.to_numeric(d_de.get("de_m"), errors="coerce")
     d_de = d_de.dropna(subset=["de_m"])
@@ -315,6 +376,7 @@ def plot_exit_diameter_vs_of(df: pd.DataFrame, outdir: str) -> list[str] | str:
             fname="de_vs_OF_pip.png",
             scale=1000.0,
             title_suffix=suffix,
+            legend_title=eff,
         )
     else:
         return _plot_quantity_aeat_mode(
@@ -333,6 +395,7 @@ def plot_throat_diameter_vs_of(df: pd.DataFrame, outdir: str) -> list[str] | str
     """Throat diameter — useful in pip mode where At is the primary sizing output."""
     mode = _nozzle_mode(df)
     suffix = f"\n({_thrust_label(df)})"
+    eff = _efficiency_label(df)
     if mode == "pip":
         return _plot_quantity_pip_mode(
             df=df.dropna(subset=["dt_m"]),
@@ -343,6 +406,7 @@ def plot_throat_diameter_vs_of(df: pd.DataFrame, outdir: str) -> list[str] | str
             fname="dt_vs_OF_pip.png",
             scale=1000.0,
             title_suffix=suffix,
+            legend_title=eff,
         )
     else:
         return _plot_quantity_aeat_mode(
