@@ -54,12 +54,72 @@ def _set_of_xlim(ax: plt.Axes, df: pd.DataFrame) -> None:
             ax.set_xlim(of_min, of_max)
 
 
+def _reaction_label(df: pd.DataFrame) -> str:
+    """Return a normalized reaction label for plot titles."""
+    if "analysis_type" not in df.columns:
+        return "unknown"
+
+    types = (
+        df["analysis_type"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .unique()
+    )
+    if len(types) != 1:
+        return "mixed"
+
+    analysis_type = types[0]
+    if analysis_type == "equilibrium":
+        return "Full Equilibrium"
+    if analysis_type != "frozen":
+        return analysis_type
+
+    if "nfz" in df.columns:
+        nfz_vals = pd.to_numeric(df["nfz"], errors="coerce").dropna().unique()
+        if len(nfz_vals) == 1:
+            nfz = int(nfz_vals[0])
+            if nfz == 1:
+                return "Frozen chamber"
+            if nfz == 2:
+                return "Frozen throat"
+
+    return "Frozen"
+
+
+def _title_with_reaction(base_title: str, df: pd.DataFrame) -> str:
+    return f"{base_title}\n(reaction type: {_reaction_label(df)})"
+
+
+def _thrust_label(df: pd.DataFrame) -> str:
+    """Return a compact thrust label for sizing/geometry plots."""
+    if "F_req_N" not in df.columns:
+        return "F_req: unknown"
+    vals = pd.to_numeric(df["F_req_N"], errors="coerce").dropna().unique()
+    if len(vals) != 1:
+        return "F_req: mixed"
+    return f"F_req = {float(vals[0]):g} N"
+
+
+def _efficiency_label(df: pd.DataFrame) -> str:
+    """Return eta labels for the two active correction factors."""
+    if "eta_cf" not in df.columns or "eta_cstar" not in df.columns:
+        return "η_cf/η_c* unknown"
+    eta_cf_vals = pd.to_numeric(df["eta_cf"], errors="coerce").dropna().unique()
+    eta_cs_vals = pd.to_numeric(df["eta_cstar"], errors="coerce").dropna().unique()
+    if len(eta_cf_vals) == 1 and len(eta_cs_vals) == 1:
+        return f"η_cf = {float(eta_cf_vals[0]):g}, η_c* = {float(eta_cs_vals[0]):g}"
+    return "η_cf/η_c* mixed"
+
+
 # ── Helpers shared by both modes ─────────────────────────────────────────────
 
 def plot_tc_vs_of(df: pd.DataFrame, outdir: str) -> str:
     """Tc vs O/F for each Pc — independent of nozzle mode."""
     _ensure_dir(outdir)
-    d = _normalize_of(df).dropna(subset=["Tc_K"]).groupby(["Pc_bar", "OF"], as_index=False)["Tc_K"].max()
+    d0 = _normalize_of(df)
+    d = d0.dropna(subset=["Tc_K"]).groupby(["Pc_bar", "OF"], as_index=False)["Tc_K"].max()
 
     fig, ax = plt.subplots(figsize=FIGSIZE)
     for Pc, g in d.groupby("Pc_bar"):
@@ -68,7 +128,7 @@ def plot_tc_vs_of(df: pd.DataFrame, outdir: str) -> str:
     _set_of_xlim(ax, d)
     ax.set_xlabel("O/F  [–]")
     ax.set_ylabel("Chamber temperature  Tc  [K]")
-    ax.set_title("Chamber temperature vs O/F\n(98 % H₂O₂ / RP-1)")
+    ax.set_title(_title_with_reaction("Chamber temperature vs O/F\n(98 % H₂O₂ / RP-1)", d0))
     ax.legend()
     ax.grid(True, linestyle="--", alpha=0.4)
     fig.tight_layout()
@@ -82,7 +142,8 @@ def plot_tc_vs_of(df: pd.DataFrame, outdir: str) -> str:
 def plot_cstar_vs_of(df: pd.DataFrame, outdir: str) -> str:
     """c* vs O/F for each Pc — independent of nozzle mode."""
     _ensure_dir(outdir)
-    d = _normalize_of(df).dropna(subset=["cstar_m_s"]).groupby(["Pc_bar", "OF"], as_index=False)["cstar_m_s"].max()
+    d0 = _normalize_of(df)
+    d = d0.dropna(subset=["cstar_m_s"]).groupby(["Pc_bar", "OF"], as_index=False)["cstar_m_s"].max()
 
     fig, ax = plt.subplots(figsize=FIGSIZE)
     for Pc, g in d.groupby("Pc_bar"):
@@ -91,7 +152,7 @@ def plot_cstar_vs_of(df: pd.DataFrame, outdir: str) -> str:
     _set_of_xlim(ax, d)
     ax.set_xlabel("O/F  [–]")
     ax.set_ylabel("Characteristic velocity  c*  [m/s]")
-    ax.set_title("c* vs O/F\n(98 % H₂O₂ / RP-1)")
+    ax.set_title(_title_with_reaction("c* vs O/F\n(98 % H₂O₂ / RP-1)", d0))
     ax.legend()
     ax.grid(True, linestyle="--", alpha=0.4)
     fig.tight_layout()
@@ -112,6 +173,7 @@ def _plot_quantity_aeat_mode(
     title_template: str,   # e.g. "Required mdot vs O/F  (Pc = {Pc:g} bar)"
     fname_template: str,   # e.g. "mdot_vs_OF_Pc_{Pc:g}bar.png"
     scale: float = 1.0,    # multiply column by this (e.g. 1000 for m→mm)
+    title_suffix: str = "",
 ) -> list[str]:
     """Generic per-Pc plot with one curve per ae/at (ae_at mode)."""
     _ensure_dir(outdir)
@@ -126,7 +188,7 @@ def _plot_quantity_aeat_mode(
         _set_of_xlim(ax, gPc)
         ax.set_xlabel("O/F  [–]")
         ax.set_ylabel(ylabel)
-        ax.set_title(title_template.format(Pc=Pc))
+        ax.set_title(title_template.format(Pc=Pc) + title_suffix)
         ax.legend(ncol=2, fontsize=8)
         ax.grid(True, linestyle="--", alpha=0.4)
         fig.tight_layout()
@@ -149,6 +211,8 @@ def _plot_quantity_pip_mode(
     title: str,
     fname: str,
     scale: float = 1.0,
+    title_suffix: str = "",
+    legend_title: str = "",
 ) -> str:
     """
     Single plot with one curve per Pc (pip mode).
@@ -164,8 +228,8 @@ def _plot_quantity_pip_mode(
     _set_of_xlim(ax, d)
     ax.set_xlabel("O/F  [–]")
     ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    ax.legend()
+    ax.set_title(title + title_suffix)
+    ax.legend(title=(legend_title if legend_title else None))
     ax.grid(True, linestyle="--", alpha=0.4)
     fig.tight_layout()
 
@@ -194,6 +258,8 @@ def plot_aeat_vs_of_pip(df: pd.DataFrame, outdir: str) -> str:
 
 def plot_mdot_vs_of(df: pd.DataFrame, outdir: str) -> list[str] | str:
     mode = _nozzle_mode(df)
+    suffix = f"\n({_thrust_label(df)})"
+    eff = _efficiency_label(df)
     if mode == "pip":
         return _plot_quantity_pip_mode(
             df=df.dropna(subset=["mdot_kg_s"]),
@@ -202,6 +268,8 @@ def plot_mdot_vs_of(df: pd.DataFrame, outdir: str) -> list[str] | str:
             ylabel="Required mass flow  ṁ  [kg/s]",
             title="Required mass flow vs O/F\n(sea-level ideal expansion)",
             fname="mdot_vs_OF_pip.png",
+            title_suffix=suffix,
+            legend_title=eff,
         )
     else:
         return _plot_quantity_aeat_mode(
@@ -211,36 +279,77 @@ def plot_mdot_vs_of(df: pd.DataFrame, outdir: str) -> list[str] | str:
             ylabel="Required mass flow  ṁ  [kg/s]",
             title_template="Required mass flow vs O/F\n(Pc = {Pc:g} bar)",
             fname_template="mdot_vs_OF_Pc_{Pc:g}bar.png",
+            title_suffix=suffix,
         )
 
 
 def plot_exit_diameter_vs_of(df: pd.DataFrame, outdir: str) -> list[str] | str:
     mode = _nozzle_mode(df)
+    suffix = f"\n({_thrust_label(df)})"
+    eff = _efficiency_label(df)
+    d_de = df.copy()
+    d_de["de_m"] = pd.to_numeric(d_de.get("de_m"), errors="coerce")
+    d_de = d_de.dropna(subset=["de_m"])
+
+    # Avoid misleading flat-zero plots when upstream data has invalid Ae/At outputs.
+    if len(d_de) == 0 or np.isclose(d_de["de_m"].abs().max(), 0.0):
+        _ensure_dir(outdir)
+        fig, ax = plt.subplots(figsize=FIGSIZE)
+        ax.axis("off")
+        ax.text(
+            0.5,
+            0.55,
+            "No valid exit-diameter data to plot",
+            ha="center",
+            va="center",
+            fontsize=11,
+            fontweight="bold",
+        )
+        ax.text(
+            0.5,
+            0.42,
+            "All de_m values are zero/invalid\n(check CEA ae_at and pip outputs for this run)",
+            ha="center",
+            va="center",
+            fontsize=9,
+        )
+        ax.set_title("Exit diameter vs O/F" + suffix)
+        fig.tight_layout()
+        path = os.path.join(outdir, "de_vs_OF_pip.png" if mode == "pip" else "de_vs_OF_invalid.png")
+        fig.savefig(path, dpi=DPI)
+        plt.close(fig)
+        return path
+
     if mode == "pip":
         return _plot_quantity_pip_mode(
-            df=df.dropna(subset=["de_m"]),
+            df=d_de,
             outdir=outdir,
             col="de_m",
             ylabel="Exit diameter  dₑ  [mm]",
             title="Exit diameter vs O/F\n(sea-level ideal expansion)",
             fname="de_vs_OF_pip.png",
             scale=1000.0,
+            title_suffix=suffix,
+            legend_title=eff,
         )
     else:
         return _plot_quantity_aeat_mode(
-            df=df,
+            df=d_de,
             outdir=outdir,
             col="de_m",
             ylabel="Exit diameter  dₑ  [mm]",
             title_template="Exit diameter vs O/F\n(Pc = {Pc:g} bar)",
             fname_template="de_vs_OF_Pc_{Pc:g}bar.png",
             scale=1000.0,
+            title_suffix=suffix,
         )
 
 
 def plot_throat_diameter_vs_of(df: pd.DataFrame, outdir: str) -> list[str] | str:
     """Throat diameter — useful in pip mode where At is the primary sizing output."""
     mode = _nozzle_mode(df)
+    suffix = f"\n({_thrust_label(df)})"
+    eff = _efficiency_label(df)
     if mode == "pip":
         return _plot_quantity_pip_mode(
             df=df.dropna(subset=["dt_m"]),
@@ -250,6 +359,8 @@ def plot_throat_diameter_vs_of(df: pd.DataFrame, outdir: str) -> list[str] | str
             title="Throat diameter vs O/F\n(sea-level ideal expansion)",
             fname="dt_vs_OF_pip.png",
             scale=1000.0,
+            title_suffix=suffix,
+            legend_title=eff,
         )
     else:
         return _plot_quantity_aeat_mode(
@@ -260,6 +371,7 @@ def plot_throat_diameter_vs_of(df: pd.DataFrame, outdir: str) -> list[str] | str
             title_template="Throat diameter vs O/F\n(Pc = {Pc:g} bar)",
             fname_template="dt_vs_OF_Pc_{Pc:g}bar.png",
             scale=1000.0,
+            title_suffix=suffix,
         )
 
 

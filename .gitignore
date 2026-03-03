@@ -1,0 +1,26 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+
+# Local plotting/config caches
+.mplconfig/
+.matplotlib/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# macOS files
+.DS_Store
+
+# Generated study/trajectory outputs
+outputs/
+trajectory_plots/
+trajectory_results.csv
+CEA_Wrap_error.out
