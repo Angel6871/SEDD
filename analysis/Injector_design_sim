@@ -1,11 +1,155 @@
-#Inlet will be:
-# massflow (bunch of different ones from the csv)
-#injector hole Diameter 0.5- 3
-#constants:
-#surface temperature
-#density ox/ fuel
-#minimum verlocity with diameter 0.5-3 with We > 10^3 and Re> 10^4
-#Cd 
-#outlet is:
-#the number of holes with diameter XXX
-#pressure  
+"""Simple injector sizing outline in plain Python.
+
+Edit the INPUTS section below with your own numbers.
+The script will then:
+- read massflow values from a CSV file,
+- try injector hole diameters between 0.5 and 3 mm,
+- check Reynolds and Weber number constraints,
+- and give you (for each massflow) a number of holes,
+  diameter, velocity, and pressure drop.
+"""
+
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+
+# =====================
+# INPUTS (EDIT THESE)
+# =====================
+
+# CSV file with mass flow rates [kg/s]
+MASSFLOW_CSV = Path("trajectory_results.csv")
+MASSFLOW_COLUMN = "massflow"  # name of the column in the CSV
+
+# Fluid and injector constants
+RHO = 1000.0   # density [kg/m^3]  (replace with your oxidizer/fuel)
+MU = 1.0e-3    # dynamic viscosity [Pa·s]
+SIGMA = 0.07   # surface tension [N/m]
+CD = 0.8       # discharge coefficient [-]
+V_MIN = 5.0    # minimum velocity [m/s]
+
+# Candidate hole diameters [m] (0.5–3 mm)
+DIAMETERS_M = np.linspace(0.5e-3, 3.0e-3, 6)
+
+# Search range for number of holes
+MIN_HOLES = 1
+MAX_HOLES = 500
+
+
+def load_massflows(csv_path, massflow_column):
+	"""Load massflow values from a CSV file (kg/s)."""
+
+	df = pd.read_csv(csv_path)
+	if massflow_column not in df.columns:
+		raise KeyError(f"Massflow column '{massflow_column}' not found in {csv_path}")
+	return df[massflow_column].to_numpy(dtype=float)
+
+
+def calc_velocity(massflow, n_holes, diameter, rho, cd):
+	"""Calculate jet velocity through the injector holes.
+
+	Formula used (you can adjust):
+	  m_dot = rho * A_total * v * Cd
+	  A_total = n_holes * (pi * d^2 / 4)
+	  => v = m_dot / (rho * Cd * A_total)
+	"""
+
+	if n_holes <= 0:
+		raise ValueError("n_holes must be positive")
+
+	area_per_hole = 0.25 * np.pi * diameter * diameter
+	a_total = n_holes * area_per_hole
+	velocity = massflow / (rho * cd * a_total)
+	return velocity
+
+
+def calc_reynolds(rho, velocity, diameter, mu):
+	"""Reynolds number: Re = rho * v * d / mu"""
+
+	return rho * velocity * diameter / mu
+
+
+def calc_weber(rho, velocity, diameter, sigma):
+	"""Weber number: We = rho * v^2 * d / sigma"""
+
+	return rho * velocity * velocity * diameter / sigma
+
+
+def calc_delta_p(rho, velocity, cd):
+	"""Pressure drop across injector (simple Bernoulli-style relation).
+
+	Δp = (rho * v^2 / 2) / Cd^2
+
+	You can replace this with a more accurate correlation
+	if you have one.
+	"""
+
+	return 0.5 * rho * velocity * velocity / (cd * cd)
+
+
+def design_for_one_massflow(massflow):
+	"""Return best (diameter, holes, velocity, Re, We, dp) for one massflow.
+
+	We require:
+	- Re > 1e4
+	- We > 1e3
+	- velocity >= V_MIN
+	Among all designs that satisfy these, we choose the
+	one with the smallest pressure drop.
+	"""
+
+	best = None  # will store a dictionary with the best design
+
+	for diameter in DIAMETERS_M:
+		for n_holes in range(MIN_HOLES, MAX_HOLES + 1):
+			velocity = calc_velocity(massflow, n_holes, diameter, RHO, CD)
+			if velocity < V_MIN:
+				continue
+
+			Re = calc_reynolds(RHO, velocity, diameter, MU)
+			We = calc_weber(RHO, velocity, diameter, SIGMA)
+			if Re <= 1e4 or We <= 1e3:
+				continue
+
+			delta_p = calc_delta_p(RHO, velocity, CD)
+			candidate = {
+				"massflow": massflow,
+				"diameter_m": diameter,
+				"n_holes": n_holes,
+				"velocity": velocity,
+				"Re": Re,
+				"We": We,
+				"delta_p": delta_p,
+			}
+
+			if best is None or candidate["delta_p"] < best["delta_p"]:
+				best = candidate
+
+	return best
+
+
+def main():
+	# 1. Load massflow values from CSV
+	massflows = load_massflows(MASSFLOW_CSV, MASSFLOW_COLUMN)
+
+	# 2. Loop over massflows and design injector
+	results = []
+	for m in massflows:
+		best = design_for_one_massflow(float(m))
+		if best is not None:
+			results.append(best)
+		# if best is None, no design satisfied the constraints
+
+	# 3. Save results to CSV so you can inspect them
+	if results:
+		df = pd.DataFrame(results)
+		df.to_csv("injector_design_results.csv", index=False)
+		print("Saved injector_design_results.csv with", len(results), "rows")
+	else:
+		print("No feasible injector design found for the given inputs.")
+
+
+if __name__ == "__main__":
+	main()
