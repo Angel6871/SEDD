@@ -1,0 +1,11 @@
+#Inlet will be:
+# massflow (bunch of different ones from the csv)
+#injector hole Diameter 0.5- 3
+#constants:
+#surface temperature
+#density ox/ fuel
+#minimum verlocity with diameter 0.5-3 with We > 10^3 and Re> 10^4
+#Cd 
+#outlet is:
+#the number of holes with diameter XXX
+#pressure  
