@@ -54,7 +54,7 @@ TARGET_ALTITUDE_M   = 1500 # [m]
 M_LAUNCH_KG         = 30.0      # [kg]  total wet mass at launch
 M_PROP_REQ       = 5       # [-]   fraction that is dry structure (everything except propellant)
 M_PROP_UNUSED = 0.2         # [kg] mass of propellant that gets stuck in pipes/tank
-M_PROP_AVAILABLE = M_PROP_REQ + M_PROP_UNUSED- M_PROP_UNUSED  # [kg] mass of propellant that can actually be burned (accounting for unusable fraction)
+M_PROP_AVAILABLE = M_PROP_REQ - M_PROP_UNUSED  # [kg] mass of propellant that can actually be burned (accounting for unusable fraction)
 # ── Drag ──────────────────────────────────────────────────────────────────────
 DRAG                = True
 CD                  = 0.7       # [-]   drag coefficient
@@ -168,8 +168,8 @@ THRUST_N        = float(_dp["F_req_N"])         # sea-level design thrust
 ISP_VAC_S       = float(_dp["ivac_s"])
 
 # ── Derived vehicle quantities ────────────────────────────────────────────────
-m_prop_kg       = M_PROP_REQ
-m_dry_kg        = M_LAUNCH_KG - M_PROP_REQ
+m_prop_kg       = M_PROP_AVAILABLE
+m_dry_kg        = M_LAUNCH_KG - M_PROP_AVAILABLE
 burn_time_s     = m_prop_kg / mdot_kg_s
 A_ref_m2        = math.pi * (BODY_DIAMETER_M / 2.0) ** 2
 
