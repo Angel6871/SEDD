@@ -19,6 +19,7 @@ import matplotlib.ticker as ticker
 # ── Consistent style ────────────────────────────────────────────────────────
 FIGSIZE = (7, 4.5)
 DPI = 200
+MAX_PC_PLOT_CURVES = 4
 
 
 def _ensure_dir(path: str) -> None:
@@ -52,6 +53,25 @@ def _set_of_xlim(ax: plt.Axes, df: pd.DataFrame) -> None:
             ax.set_xlim(of_min - pad, of_max + pad)
         else:
             ax.set_xlim(of_min, of_max)
+
+
+def _downselect_pc_for_plots(df: pd.DataFrame, max_curves: int = MAX_PC_PLOT_CURVES) -> pd.DataFrame:
+    """
+    Limit plotted chamber-pressure curves to representative values across the sweep.
+    This keeps legends/curves readable for dense Pc grids.
+    """
+    if "Pc_bar" not in df.columns or max_curves < 1:
+        return df
+
+    pcs = np.sort(pd.to_numeric(df["Pc_bar"], errors="coerce").dropna().unique())
+    if len(pcs) <= max_curves:
+        return df
+
+    idx = np.linspace(0, len(pcs) - 1, max_curves, dtype=int)
+    selected = pcs[idx]
+    d = df.copy()
+    d["Pc_bar"] = pd.to_numeric(d["Pc_bar"], errors="coerce")
+    return d[d["Pc_bar"].isin(selected)]
 
 
 def _reaction_label(df: pd.DataFrame) -> str:
@@ -92,6 +112,22 @@ def _title_with_reaction(base_title: str, df: pd.DataFrame) -> str:
     return f"{base_title}\n(reaction type: {_reaction_label(df)})"
 
 
+def _show_titles(df: pd.DataFrame) -> bool:
+    """Return whether plot titles should be shown (config-driven)."""
+    if "plot_show_titles" not in df.columns:
+        return True
+    vals = df["plot_show_titles"].dropna().unique()
+    if len(vals) == 0:
+        return True
+    v = str(vals[0]).strip().lower()
+    return v in {"1", "true", "yes", "y", "on"}
+
+
+def _set_plot_title(ax: plt.Axes, title: str, df: pd.DataFrame) -> None:
+    if _show_titles(df):
+        ax.set_title(title)
+
+
 def _thrust_label(df: pd.DataFrame) -> str:
     """Return a compact thrust label for sizing/geometry plots."""
     if "F_req_N" not in df.columns:
@@ -118,7 +154,7 @@ def _efficiency_label(df: pd.DataFrame) -> str:
 def plot_tc_vs_of(df: pd.DataFrame, outdir: str) -> str:
     """Tc vs O/F for each Pc — independent of nozzle mode."""
     _ensure_dir(outdir)
-    d0 = _normalize_of(df)
+    d0 = _downselect_pc_for_plots(_normalize_of(df))
     d = d0.dropna(subset=["Tc_K"]).groupby(["Pc_bar", "OF"], as_index=False)["Tc_K"].max()
 
     fig, ax = plt.subplots(figsize=FIGSIZE)
@@ -128,7 +164,7 @@ def plot_tc_vs_of(df: pd.DataFrame, outdir: str) -> str:
     _set_of_xlim(ax, d)
     ax.set_xlabel("O/F  [–]")
     ax.set_ylabel("Chamber temperature  Tc  [K]")
-    ax.set_title(_title_with_reaction("Chamber temperature vs O/F\n(98 % H₂O₂ / RP-1)", d0))
+    _set_plot_title(ax, _title_with_reaction("Chamber temperature vs O/F\n(98 % H₂O₂ / RP-1)", d0), d0)
     ax.legend()
     ax.grid(True, linestyle="--", alpha=0.4)
     fig.tight_layout()
@@ -142,7 +178,7 @@ def plot_tc_vs_of(df: pd.DataFrame, outdir: str) -> str:
 def plot_cstar_vs_of(df: pd.DataFrame, outdir: str) -> str:
     """c* vs O/F for each Pc — independent of nozzle mode."""
     _ensure_dir(outdir)
-    d0 = _normalize_of(df)
+    d0 = _downselect_pc_for_plots(_normalize_of(df))
     d = d0.dropna(subset=["cstar_m_s"]).groupby(["Pc_bar", "OF"], as_index=False)["cstar_m_s"].max()
 
     fig, ax = plt.subplots(figsize=FIGSIZE)
@@ -152,7 +188,7 @@ def plot_cstar_vs_of(df: pd.DataFrame, outdir: str) -> str:
     _set_of_xlim(ax, d)
     ax.set_xlabel("O/F  [–]")
     ax.set_ylabel("Characteristic velocity  c*  [m/s]")
-    ax.set_title(_title_with_reaction("c* vs O/F\n(98 % H₂O₂ / RP-1)", d0))
+    _set_plot_title(ax, _title_with_reaction("c* vs O/F\n(98 % H₂O₂ / RP-1)", d0), d0)
     ax.legend()
     ax.grid(True, linestyle="--", alpha=0.4)
     fig.tight_layout()
@@ -177,7 +213,7 @@ def _plot_quantity_aeat_mode(
 ) -> list[str]:
     """Generic per-Pc plot with one curve per ae/at (ae_at mode)."""
     _ensure_dir(outdir)
-    d = _normalize_of(df)
+    d = _downselect_pc_for_plots(_normalize_of(df))
     paths = []
 
     for Pc, gPc in d.dropna(subset=[col]).groupby("Pc_bar"):
@@ -188,7 +224,7 @@ def _plot_quantity_aeat_mode(
         _set_of_xlim(ax, gPc)
         ax.set_xlabel("O/F  [–]")
         ax.set_ylabel(ylabel)
-        ax.set_title(title_template.format(Pc=Pc) + title_suffix)
+        _set_plot_title(ax, title_template.format(Pc=Pc) + title_suffix, gPc)
         ax.legend(ncol=2, fontsize=8)
         ax.grid(True, linestyle="--", alpha=0.4)
         fig.tight_layout()
@@ -219,7 +255,7 @@ def _plot_quantity_pip_mode(
     ae/at varies continuously with O/F so we never group by it.
     """
     _ensure_dir(outdir)
-    d = _normalize_of(df).dropna(subset=[col])
+    d = _downselect_pc_for_plots(_normalize_of(df).dropna(subset=[col]))
 
     fig, ax = plt.subplots(figsize=FIGSIZE)
     for Pc, g in d.groupby("Pc_bar"):
@@ -228,7 +264,7 @@ def _plot_quantity_pip_mode(
     _set_of_xlim(ax, d)
     ax.set_xlabel("O/F  [–]")
     ax.set_ylabel(ylabel)
-    ax.set_title(title + title_suffix)
+    _set_plot_title(ax, title + title_suffix, d)
     ax.legend(title=(legend_title if legend_title else None))
     ax.grid(True, linestyle="--", alpha=0.4)
     fig.tight_layout()
@@ -313,7 +349,7 @@ def plot_exit_diameter_vs_of(df: pd.DataFrame, outdir: str) -> list[str] | str:
             va="center",
             fontsize=9,
         )
-        ax.set_title("Exit diameter vs O/F" + suffix)
+        _set_plot_title(ax, "Exit diameter vs O/F" + suffix, d_de)
         fig.tight_layout()
         path = os.path.join(outdir, "de_vs_OF_pip.png" if mode == "pip" else "de_vs_OF_invalid.png")
         fig.savefig(path, dpi=DPI)
