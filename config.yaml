@@ -4,23 +4,23 @@
 # ================================
 # Thrust requirement
 # ================================
-F_req_N: 500.0   # Required thrust [N]
+F_req_N: 1250   # Required thrust [N]
 
 # ================================
 # Chamber pressure sweep [bar]
 # ================================
 Pc_min: 5.0
-Pc_max: 15.0
-Pc_points: 81
+Pc_max: 20.0
+Pc_points: 100
 # Optional legacy mode (explicit values):
 # Pc_bar_list: [5.0, 7.5, 10.0, 12.5, 15.0]
 
 # ================================
 # Mixture ratio sweep (O/F)
 # ================================
-OF_min: 4
-OF_max: 8
-OF_points: 81
+OF_min: 3
+OF_max: 10
+OF_points: 100
 
 # ================================
 # Nozzle design mode
@@ -41,6 +41,10 @@ Pe_bar: 1.01325
 # ================================
 H2O2_mass_frac: 0.98
 H2O_mass_frac: 0.02
+decomp_conversion: 0.98
+eta_decomp: 0.90
+delta_p_injector_bar: 5.0
+delta_p_bed_bar: 2.0
 
 # ================================
 # Inlet temperatures [K]
@@ -90,4 +94,4 @@ output_dir: outputs
 plot_show_titles: false
 # Optional custom run folder name inside output_dir.
 # Leave empty or remove to auto-use: run_YYYYMMDD_HHMMSS
-run_name: frozen_throat_new
+run_name: frozen_throat_1250
