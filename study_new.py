@@ -227,8 +227,9 @@ def write_outputs(df: pd.DataFrame, cfg: dict, run_dir: str) -> str:
 
         group_cols = ["Pc_bar"] if nozzle_mode == "pip" else ["Pc_bar", "ae_at"]
         keep = [
-            "Pc_bar", "ae_at", "Pe_bar", "pip", "OF", "Tc_K", "cf",
-            "cstar_m_s", "ivac_s", "mdot_kg_s", "dt_m", "de_m",
+            "nozzle_mode", "Pc_bar", "ae_at", "Pe_bar", "pip", "OF",
+            "Tc_K", "cf", "cstar_m_s", "ivac_s", "mdot_kg_s",
+            "F_req_N", "Ae_m2", "At_m2", "dt_m", "de_m",
         ]
         if len(best_pool) == 0:
             empty_cols = [c for c in keep if c in df.columns]

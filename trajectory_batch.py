@@ -41,9 +41,9 @@ DPI = 200
 
 # ── File paths (edit these for quick use without CLI args) ────────────────
 # Set to None to auto-pick newest outputs/*/results.csv
-INPUT_RESULTS_CSV = "outputs/frozen_throat_many_pc/results.csv"
+INPUT_RESULTS_CSV = "outputs/frozen_throat_new/best_by_mdot.csv"
 # Set to None to auto-write next to input as results_with_altitude.csv
-OUTPUT_RESULTS_CSV = "outputs/frozen_throat_many_pc/results_with_altitude.csv"
+OUTPUT_RESULTS_CSV = "outputs/frozen_throat_new/best_by_mdot_with_altitude.csv"
 
 
 def parse_args() -> argparse.Namespace:
@@ -346,10 +346,24 @@ def main() -> None:
     status = np.array(["skipped_non_pip"] * n_total, dtype=object)
 
     # Per user requirement: only calculate trajectory when nozzle_mode == pip.
-    is_pip = df.get("nozzle_mode", pd.Series(["" for _ in range(n_total)])).astype(str).str.lower().eq("pip")
+    if "nozzle_mode" in df.columns:
+        is_pip = df["nozzle_mode"].astype(str).str.lower().eq("pip")
+    else:
+        # best_by_mdot.csv from older study runs may not include nozzle_mode.
+        # In that case, treat all rows as candidates and rely on required-column checks.
+        print("Warning: nozzle_mode column missing; assuming all rows are pip-compatible.")
+        is_pip = pd.Series([True for _ in range(n_total)])
 
     pip_indices = np.where(is_pip.values)[0]
     print(f"pip rows to simulate: {len(pip_indices)}")
+
+    required = ["F_req_N", "Ae_m2", "mdot_kg_s"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(
+            "Input CSV is missing required columns for trajectory simulation: "
+            f"{missing}. Regenerate best_by_mdot.csv with updated study_new.py."
+        )
 
     for j, idx in enumerate(pip_indices, start=1):
         row = df.iloc[idx]
