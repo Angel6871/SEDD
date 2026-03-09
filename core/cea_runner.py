@@ -9,10 +9,12 @@ import math
 from typing import Any, Dict, Optional
 
 from CEA_Wrap import RocketProblem, Fuel, Oxidizer
+from core.decomposition import decompose_h2o2_stream
 
 
 def build_materials_rp1_h2o2(
     *,
+    Pc_bar: float,
     fuel_T_K: float,
     ox_T_K: float,
     h2o2_mass_frac: float = 0.98,
@@ -20,22 +22,53 @@ def build_materials_rp1_h2o2(
     fuel_name: str = "RP-1",
     h2o2_name: str = "H2O2(L)",
     h2o_name: str = "H2O(L)",
+    o2_name: str = "O2",
+    decomp_conversion: float = 1.0,
+    eta_decomp: float = 1.0,
+    delta_p_injector_bar: float = 0.0,
+    delta_p_bed_bar: float = 0.0,
 ) -> Dict[str, object]:
     """
     Build reactants for:
       - Fuel: RP-1
-      - Oxidizer mixture: 98% H2O2 + 2% H2O by mass
+      - Oxidizer decomposition products from H2O2/H2O feed.
 
     IMPORTANT: CEA_Wrap requires reactants to be Fuel/Oxidizer objects.
     """
     if abs(h2o2_mass_frac + h2o_mass_frac - 1.0) > 1e-9:
         raise ValueError("Oxidizer mass fractions must sum to 1.0")
 
-    fuel = Fuel(fuel_name, temp=fuel_T_K, wt=1.0)
-    ox_h2o2 = Oxidizer(h2o2_name, temp=ox_T_K, wt=100.0 * h2o2_mass_frac)
-    ox_h2o = Oxidizer(h2o_name, temp=ox_T_K, wt=100.0 * h2o_mass_frac)
+    decomp = decompose_h2o2_stream(
+        Pc_bar=Pc_bar,
+        delta_p_injector_bar=delta_p_injector_bar,
+        delta_p_bed_bar=delta_p_bed_bar,
+        ox_temp_in_K=ox_T_K,
+        h2o2_mass_frac_in=h2o2_mass_frac,
+        h2o_mass_frac_in=h2o_mass_frac,
+        decomp_conversion=decomp_conversion,
+        eta_decomp=eta_decomp,
+    )
 
-    return {"fuel": fuel, "ox_h2o2": ox_h2o2, "ox_h2o": ox_h2o}
+    fuel = Fuel(fuel_name, temp=fuel_T_K, wt=1.0)
+
+    def _de_liquefy(name: str) -> str:
+        # CEA liquid tags like "(L)" are invalid at high decomposition temperatures.
+        return name.replace("(L)", "").replace("(l)", "").strip()
+
+    h2o2_mat_name = h2o2_name
+    h2o_mat_name = h2o_name
+    if decomp["ox_temp_out_K"] > 600.0:
+        h2o2_mat_name = _de_liquefy(h2o2_name)
+        h2o_mat_name = _de_liquefy(h2o_name)
+    oxidizers = []
+    if decomp["h2o2_mass_frac_out"] > 0.0:
+        oxidizers.append(Oxidizer(h2o2_mat_name, temp=decomp["ox_temp_out_K"], wt=100.0 * decomp["h2o2_mass_frac_out"]))
+    if decomp["h2o_mass_frac_out"] > 0.0:
+        oxidizers.append(Oxidizer(h2o_mat_name, temp=decomp["ox_temp_out_K"], wt=100.0 * decomp["h2o_mass_frac_out"]))
+    if decomp["o2_mass_frac_out"] > 0.0:
+        oxidizers.append(Oxidizer(o2_name, temp=decomp["ox_temp_out_K"], wt=100.0 * decomp["o2_mass_frac_out"]))
+
+    return {"fuel": fuel, "oxidizers": oxidizers}
 
 
 def run_rocket_case(
@@ -57,6 +90,11 @@ def run_rocket_case(
     fuel_name: str = "RP-1",
     h2o2_name: str = "H2O2(L)",
     h2o_name: str = "H2O(L)",
+    o2_name: str = "O2",
+    decomp_conversion: float = 1.0,
+    eta_decomp: float = 1.0,
+    delta_p_injector_bar: float = 0.0,
+    delta_p_bed_bar: float = 0.0,
     massf: bool = False,
 ) -> Dict[str, Any]:
     """
@@ -73,6 +111,7 @@ def run_rocket_case(
         raise ValueError("Specify exactly one of ae_at or pip (not both).")
 
     mats = build_materials_rp1_h2o2(
+        Pc_bar=Pc_bar,
         fuel_T_K=fuel_T_K,
         ox_T_K=ox_T_K,
         h2o2_mass_frac=h2o2_mass_frac,
@@ -80,12 +119,17 @@ def run_rocket_case(
         fuel_name=fuel_name,
         h2o2_name=h2o2_name,
         h2o_name=h2o_name,
+        o2_name=o2_name,
+        decomp_conversion=decomp_conversion,
+        eta_decomp=eta_decomp,
+        delta_p_injector_bar=delta_p_injector_bar,
+        delta_p_bed_bar=delta_p_bed_bar,
     )
 
     kwargs = dict(
         pressure=Pc_bar,
         pressure_units="bar",
-        materials=[mats["fuel"], mats["ox_h2o2"], mats["ox_h2o"]],
+        materials=[mats["fuel"], *mats["oxidizers"]],
         o_f=OF,
         analysis_type=analysis_type,
         massf=massf,

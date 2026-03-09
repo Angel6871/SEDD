@@ -15,8 +15,9 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-from cea_runner import run_rocket_case
-from plots import generate_all_plots
+from core.cea_runner import run_rocket_case
+from core.decomposition import decompose_h2o2_stream
+from core.plots import generate_all_plots
 
 
 def load_config(path: str) -> dict:
@@ -58,6 +59,22 @@ def validate_config(cfg: dict) -> None:
     if "Tc_max_K" in cfg and cfg["Tc_max_K"] is not None:
         if float(cfg["Tc_max_K"]) <= 0.0:
             raise ValueError("Tc_max_K must be > 0 when provided.")
+
+    if "decomp_conversion" in cfg:
+        dc = float(cfg["decomp_conversion"])
+        if dc < 0.0 or dc > 1.0:
+            raise ValueError("decomp_conversion must be in [0, 1].")
+
+    if "eta_decomp" in cfg:
+        ed = float(cfg["eta_decomp"])
+        if ed < 0.0 or ed > 1.0:
+            raise ValueError("eta_decomp must be in [0, 1].")
+
+    if "delta_p_injector_bar" in cfg and float(cfg["delta_p_injector_bar"]) < 0.0:
+        raise ValueError("delta_p_injector_bar must be >= 0.")
+
+    if "delta_p_bed_bar" in cfg and float(cfg["delta_p_bed_bar"]) < 0.0:
+        raise ValueError("delta_p_bed_bar must be >= 0.")
 
     if abs(float(cfg["H2O2_mass_frac"]) + float(cfg["H2O_mass_frac"]) - 1.0) > 1e-9:
         raise ValueError("H2O2_mass_frac + H2O_mass_frac must equal 1.0.")
@@ -181,6 +198,10 @@ def run_single_case(cfg: dict, Pc_bar: float, OF: float, ae_at: float | None, pi
         ox_T_K=cfg["ox_T_K"],
         h2o2_mass_frac=cfg["H2O2_mass_frac"],
         h2o_mass_frac=cfg["H2O_mass_frac"],
+        decomp_conversion=float(cfg.get("decomp_conversion", 1.0)),
+        eta_decomp=float(cfg.get("eta_decomp", 1.0)),
+        delta_p_injector_bar=float(cfg.get("delta_p_injector_bar", 0.0)),
+        delta_p_bed_bar=float(cfg.get("delta_p_bed_bar", 0.0)),
     )
 
     r.update({
@@ -274,6 +295,22 @@ def main() -> None:
         f"Pc={pc_sweep_text}",
         f"OF=[{cfg['OF_min']}, {cfg['OF_max']}], points={cfg['OF_points']}",
         f"cases={case_count}",
+    )
+
+    decomp = decompose_h2o2_stream(
+        Pc_bar=float(Pc_list[0]),
+        delta_p_injector_bar=float(cfg.get("delta_p_injector_bar", 0.0)),
+        delta_p_bed_bar=float(cfg.get("delta_p_bed_bar", 0.0)),
+        ox_temp_in_K=float(cfg["ox_T_K"]),
+        h2o2_mass_frac_in=float(cfg["H2O2_mass_frac"]),
+        h2o_mass_frac_in=float(cfg["H2O_mass_frac"]),
+        decomp_conversion=float(cfg.get("decomp_conversion", 1.0)),
+        eta_decomp=float(cfg.get("eta_decomp", 1.0)),
+    )
+    print(
+        "Ox injector inlet temperature (after decomposition):",
+        f"{decomp['ox_temp_out_K']:.2f} K",
+        f"(at Pc={float(Pc_list[0]):.3f} bar, P_decomp={decomp['p_decomp_bar']:.3f} bar)",
     )
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
