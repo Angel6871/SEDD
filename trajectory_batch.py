@@ -41,9 +41,9 @@ DPI = 200
 
 # ── File paths (edit these for quick use without CLI args) ────────────────
 # Set to None to auto-pick newest outputs/*/results.csv
-INPUT_RESULTS_CSV = "outputs/frozen_throat_new/best_by_mdot.csv"
+INPUT_RESULTS_CSV = "outputs/frozen_throat_1250/best_by_mdot.csv"
 # Set to None to auto-write next to input as results_with_altitude.csv
-OUTPUT_RESULTS_CSV = "outputs/frozen_throat_new/best_by_mdot_with_altitude.csv"
+OUTPUT_RESULTS_CSV = "outputs/frozen_throat_1250/best_by_mdot_with_altitude.csv"
 
 
 def parse_args() -> argparse.Namespace:
@@ -429,7 +429,7 @@ def main() -> None:
         f"altitude={best_row.get('altitude_reached_m', 'n/a')}",
     )
 
-    plots_dir = args.plots_dir or os.path.join(os.path.dirname(out_path), "trajectory_plots_best")
+    plots_dir = args.plots_dir or os.path.join(os.path.dirname(results_path), "best_config_plots")
     best_hist, _, best_status = run_trajectory_history(
         float(best_row["F_req_N"]),
         float(best_row["Ae_m2"]),
