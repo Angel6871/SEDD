@@ -40,12 +40,12 @@ except ImportError:
 # ── CEA run to load ───────────────────────────────────────────────────────────
 # Set RUN_ID to a specific folder (e.g. "run_20260301_171145") to pin a run.
 # Leave as None to automatically use the latest run_* folder in ./outputs.
-RUN_ID          = None
+RUN_ID          = "/Users/grdc/SEDD/outputs/frozen_throat_many_pc/"
 OUTPUTS_DIR     = "./outputs"
 
 # ── Design point selector — pick the row you want ────────────────────────────
-DESIGN_PC_BAR   = 11.7      # [bar]  must match a Pc_bar value in the CSV
-DESIGN_OF       = 6.5       # [-]    must match an OF value in the CSV
+DESIGN_PC_BAR   = 12.5      # [bar]  must match a Pc_bar value in the CSV
+DESIGN_OF       = 7.7       # [-]    must match an OF value in the CSV
 
 # ── Mission ───────────────────────────────────────────────────────────────────
 TARGET_ALTITUDE_M   = 1500 # [m]
@@ -56,8 +56,8 @@ M_PROP_REQ       = 5       # [-]   fraction that is dry structure (everything ex
 
 # ── Drag ──────────────────────────────────────────────────────────────────────
 DRAG                = True
-CD                  = 0.4       # [-]   drag coefficient
-BODY_DIAMETER_M     = 0.08      # [m]   reference body diameter for frontal area
+CD                  = 0.7       # [-]   drag coefficient
+BODY_DIAMETER_M     = 0.25      # [m]   reference body diameter for frontal area
 
 # ════════════════════════════════════════════════════════════════════════════
 # CONSTANTS

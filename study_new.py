@@ -26,7 +26,7 @@ def load_config(path: str) -> dict:
 
 def validate_config(cfg: dict) -> None:
     required = [
-        "F_req_N", "Pc_bar_list", "OF_min", "OF_max", "OF_points",
+        "F_req_N", "OF_min", "OF_max", "OF_points",
         "analysis_type", "fuel_T_K", "ox_T_K", "H2O2_mass_frac",
         "H2O_mass_frac", "eta_cstar", "eta_cf", "output_csv", "output_dir",
     ]
@@ -34,14 +34,30 @@ def validate_config(cfg: dict) -> None:
     if missing:
         raise ValueError(f"Missing required config keys: {missing}")
 
-    if not cfg["Pc_bar_list"]:
-        raise ValueError("Pc_bar_list must contain at least one pressure.")
+    has_pc_range = all(k in cfg for k in ("Pc_min", "Pc_max", "Pc_points"))
+    has_pc_list = "Pc_bar_list" in cfg and bool(cfg["Pc_bar_list"])
+
+    if not has_pc_range and not has_pc_list:
+        raise ValueError(
+            "Define either Pc_min/Pc_max/Pc_points for a continuous sweep "
+            "or Pc_bar_list for explicit pressure points."
+        )
+
+    if has_pc_range:
+        if float(cfg["Pc_min"]) >= float(cfg["Pc_max"]):
+            raise ValueError("Pc_min must be < Pc_max.")
+        if int(cfg["Pc_points"]) < 2:
+            raise ValueError("Pc_points must be >= 2.")
 
     if float(cfg["OF_min"]) >= float(cfg["OF_max"]):
         raise ValueError("OF_min must be < OF_max.")
 
     if int(cfg["OF_points"]) < 2:
         raise ValueError("OF_points must be >= 2.")
+
+    if "Tc_max_K" in cfg and cfg["Tc_max_K"] is not None:
+        if float(cfg["Tc_max_K"]) <= 0.0:
+            raise ValueError("Tc_max_K must be > 0 when provided.")
 
     if abs(float(cfg["H2O2_mass_frac"]) + float(cfg["H2O_mass_frac"]) - 1.0) > 1e-9:
         raise ValueError("H2O2_mass_frac + H2O_mass_frac must equal 1.0.")
@@ -135,6 +151,12 @@ def ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
 
+def build_pc_list(cfg: dict) -> np.ndarray:
+    if all(k in cfg for k in ("Pc_min", "Pc_max", "Pc_points")):
+        return np.linspace(float(cfg["Pc_min"]), float(cfg["Pc_max"]), int(cfg["Pc_points"]))
+    return np.asarray(cfg["Pc_bar_list"], dtype=float)
+
+
 def build_nozzle_cases(cfg: dict, Pc_bar: float) -> list[tuple[float | None, float | None]]:
     nozzle_mode = str(cfg.get("nozzle_mode", "ae_at")).strip().lower()
     if nozzle_mode == "pip":
@@ -194,19 +216,32 @@ def write_outputs(df: pd.DataFrame, cfg: dict, run_dir: str) -> str:
 
     nozzle_mode = str(cfg.get("nozzle_mode", "ae_at")).strip().lower()
     if "mdot_kg_s" in df.columns:
+        best_pool = df.dropna(subset=["mdot_kg_s"]).copy()
+        tc_max_k = cfg.get("Tc_max_K")
+        if tc_max_k is not None:
+            tc_max_k = float(tc_max_k)
+            if "Tc_K" not in best_pool.columns:
+                raise ValueError("Tc_max_K is set, but Tc_K column is missing from results.")
+            best_pool["Tc_K"] = pd.to_numeric(best_pool["Tc_K"], errors="coerce")
+            best_pool = best_pool[best_pool["Tc_K"] <= tc_max_k]
+
         group_cols = ["Pc_bar"] if nozzle_mode == "pip" else ["Pc_bar", "ae_at"]
-        summary = (
-            df.dropna(subset=["mdot_kg_s"])
-            .sort_values("mdot_kg_s")
-            .groupby(group_cols, as_index=False)
-            .first()
-        )
         keep = [
             "Pc_bar", "ae_at", "Pe_bar", "pip", "OF", "Tc_K", "cf",
             "cstar_m_s", "ivac_s", "mdot_kg_s", "dt_m", "de_m",
         ]
-        keep = [c for c in keep if c in summary.columns]
-        summary[keep].to_csv(os.path.join(run_dir, "best_by_mdot.csv"), index=False)
+        if len(best_pool) == 0:
+            empty_cols = [c for c in keep if c in df.columns]
+            pd.DataFrame(columns=empty_cols).to_csv(os.path.join(run_dir, "best_by_mdot.csv"), index=False)
+            print("Warning: no rows satisfy Tc_max_K; wrote empty best_by_mdot.csv")
+        else:
+            summary = (
+                best_pool.sort_values("mdot_kg_s")
+                .groupby(group_cols, as_index=False)
+                .first()
+            )
+            keep = [c for c in keep if c in summary.columns]
+            summary[keep].to_csv(os.path.join(run_dir, "best_by_mdot.csv"), index=False)
 
     generate_all_plots(df, run_dir)
     return results_path
@@ -218,17 +253,24 @@ def main() -> None:
 
     nozzle_mode = str(cfg.get("nozzle_mode", "ae_at")).strip().lower()
     reaction_mode = reaction_mode_from_config(cfg)
+    Pc_list = build_pc_list(cfg)
     OF_list = np.linspace(cfg["OF_min"], cfg["OF_max"], cfg["OF_points"])
 
     case_count = 0
-    for Pc_bar in cfg["Pc_bar_list"]:
+    for Pc_bar in Pc_list:
         case_count += len(build_nozzle_cases(cfg, float(Pc_bar))) * len(OF_list)
+
+    pc_sweep_text = (
+        f"[{float(cfg['Pc_min'])}, {float(cfg['Pc_max'])}], points={int(cfg['Pc_points'])}"
+        if all(k in cfg for k in ("Pc_min", "Pc_max", "Pc_points"))
+        else f"list={len(Pc_list)} points"
+    )
 
     print(
         "Config sweep:",
         f"mode={nozzle_mode}",
         f"reaction={reaction_mode}",
-        f"Pc_points={len(cfg['Pc_bar_list'])}",
+        f"Pc={pc_sweep_text}",
         f"OF=[{cfg['OF_min']}, {cfg['OF_max']}], points={cfg['OF_points']}",
         f"cases={case_count}",
     )
@@ -243,7 +285,7 @@ def main() -> None:
         yaml.safe_dump(cfg, f, sort_keys=False)
 
     rows = []
-    for Pc_bar in cfg["Pc_bar_list"]:
+    for Pc_bar in Pc_list:
         for ae_at, pip in build_nozzle_cases(cfg, float(Pc_bar)):
             for OF in OF_list:
                 rows.append(run_single_case(cfg, float(Pc_bar), float(OF), ae_at, pip))
