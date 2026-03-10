@@ -4,7 +4,7 @@
 # ================================
 # Thrust requirement
 # ================================
-F_req_N: 1250   # Required thrust [N]
+F_req_N: 750   # Required thrust [N]
 
 # ================================
 # Chamber pressure sweep [bar]
@@ -43,7 +43,7 @@ H2O2_mass_frac: 0.98
 H2O_mass_frac: 0.02
 decomp_conversion: 0.98
 eta_decomp: 0.90
-delta_p_injector_bar: 5.0
+delta_p_injector_bar: 4.0
 delta_p_bed_bar: 2.0
 
 # ================================
@@ -90,8 +90,9 @@ Tc_max_K: 2500
 # ================================
 output_csv: results.csv
 output_dir: outputs
+run_trajectory: true
 # Plot titles toggle (true/false)
 plot_show_titles: false
 # Optional custom run folder name inside output_dir.
 # Leave empty or remove to auto-use: run_YYYYMMDD_HHMMSS
-run_name: frozen_throat_1250
+run_name: frozen_throat_750

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import os
 import math
+import subprocess
+import sys
 import yaml
 from datetime import datetime
 
@@ -75,6 +77,9 @@ def validate_config(cfg: dict) -> None:
 
     if "delta_p_bed_bar" in cfg and float(cfg["delta_p_bed_bar"]) < 0.0:
         raise ValueError("delta_p_bed_bar must be >= 0.")
+
+    if "run_trajectory" in cfg and not isinstance(cfg["run_trajectory"], bool):
+        raise ValueError("run_trajectory must be true/false.")
 
     if abs(float(cfg["H2O2_mass_frac"]) + float(cfg["H2O_mass_frac"]) - 1.0) > 1e-9:
         raise ValueError("H2O2_mass_frac + H2O_mass_frac must equal 1.0.")
@@ -330,6 +335,16 @@ def main() -> None:
 
     df = pd.DataFrame(rows)
     results_path = write_outputs(df, cfg, run_dir)
+
+    if bool(cfg.get("run_trajectory", False)):
+        batch_script = os.path.join(os.path.dirname(__file__), "trajectory_batch.py")
+        best_csv = os.path.join(run_dir, "best_by_mdot.csv")
+        best_alt_csv = os.path.join(run_dir, "best_by_mdot_with_altitude.csv")
+        print("Running trajectory pipeline on:", best_csv)
+        subprocess.run(
+            [sys.executable, batch_script, "--results", best_csv, "--out", best_alt_csv],
+            check=True,
+        )
 
     print("Study completed.")
     print("Run folder created:", run_dir)
