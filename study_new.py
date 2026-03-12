@@ -21,6 +21,8 @@ from core.cea_runner import run_rocket_case
 from core.decomposition import decompose_h2o2_stream
 from core.plots import generate_all_plots
 
+INJECTOR_DP_FRACTION_OF_PC = 0.25
+
 
 def load_config(path: str) -> dict:
     with open(path, "r") as f:
@@ -71,9 +73,6 @@ def validate_config(cfg: dict) -> None:
         ed = float(cfg["eta_decomp"])
         if ed < 0.0 or ed > 1.0:
             raise ValueError("eta_decomp must be in [0, 1].")
-
-    if "delta_p_injector_bar" in cfg and float(cfg["delta_p_injector_bar"]) < 0.0:
-        raise ValueError("delta_p_injector_bar must be >= 0.")
 
     if "delta_p_bed_bar" in cfg and float(cfg["delta_p_bed_bar"]) < 0.0:
         raise ValueError("delta_p_bed_bar must be >= 0.")
@@ -205,7 +204,6 @@ def run_single_case(cfg: dict, Pc_bar: float, OF: float, ae_at: float | None, pi
         h2o_mass_frac=cfg["H2O_mass_frac"],
         decomp_conversion=float(cfg.get("decomp_conversion", 1.0)),
         eta_decomp=float(cfg.get("eta_decomp", 1.0)),
-        delta_p_injector_bar=float(cfg.get("delta_p_injector_bar", 0.0)),
         delta_p_bed_bar=float(cfg.get("delta_p_bed_bar", 0.0)),
     )
 
@@ -299,12 +297,12 @@ def main() -> None:
         f"reaction={reaction_mode}",
         f"Pc={pc_sweep_text}",
         f"OF=[{cfg['OF_min']}, {cfg['OF_max']}], points={cfg['OF_points']}",
+        f"delta_p_inj={INJECTOR_DP_FRACTION_OF_PC:.2f}*Pc",
         f"cases={case_count}",
     )
 
     decomp = decompose_h2o2_stream(
         Pc_bar=float(Pc_list[0]),
-        delta_p_injector_bar=float(cfg.get("delta_p_injector_bar", 0.0)),
         delta_p_bed_bar=float(cfg.get("delta_p_bed_bar", 0.0)),
         ox_temp_in_K=float(cfg["ox_T_K"]),
         h2o2_mass_frac_in=float(cfg["H2O2_mass_frac"]),

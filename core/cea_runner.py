@@ -25,7 +25,6 @@ def build_materials_rp1_h2o2(
     o2_name: str = "O2",
     decomp_conversion: float = 1.0,
     eta_decomp: float = 1.0,
-    delta_p_injector_bar: float = 0.0,
     delta_p_bed_bar: float = 0.0,
 ) -> Dict[str, object]:
     """
@@ -40,7 +39,6 @@ def build_materials_rp1_h2o2(
 
     decomp = decompose_h2o2_stream(
         Pc_bar=Pc_bar,
-        delta_p_injector_bar=delta_p_injector_bar,
         delta_p_bed_bar=delta_p_bed_bar,
         ox_temp_in_K=ox_T_K,
         h2o2_mass_frac_in=h2o2_mass_frac,
@@ -93,7 +91,6 @@ def run_rocket_case(
     o2_name: str = "O2",
     decomp_conversion: float = 1.0,
     eta_decomp: float = 1.0,
-    delta_p_injector_bar: float = 0.0,
     delta_p_bed_bar: float = 0.0,
     massf: bool = False,
 ) -> Dict[str, Any]:
@@ -122,7 +119,6 @@ def run_rocket_case(
         o2_name=o2_name,
         decomp_conversion=decomp_conversion,
         eta_decomp=eta_decomp,
-        delta_p_injector_bar=delta_p_injector_bar,
         delta_p_bed_bar=delta_p_bed_bar,
     )
 

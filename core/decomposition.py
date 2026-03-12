@@ -6,7 +6,7 @@ Model:
 
 Temperature:
   - equilibrium decomposition temperature from CEA_Wrap HPProblem at
-    P_decomp = Pc + delta_p_injector + delta_p_bed
+    P_decomp = Pc + 0.25*Pc + delta_p_bed
   - scaled with eta_decomp:
       T_out = T_in + eta_decomp * (T_eq - T_in)
 
@@ -21,6 +21,7 @@ from CEA_Wrap import Fuel, HPProblem, Oxidizer
 MW_H2O2 = 34.0147e-3
 MW_H2O = 18.01528e-3
 MW_O2 = 31.9988e-3
+INJECTOR_DP_FRACTION_OF_PC = 0.25
 
 
 def _clamp01(x: float) -> float:
@@ -69,7 +70,6 @@ def equilibrium_decomp_temperature_hp(
 def decompose_h2o2_stream(
     *,
     Pc_bar: float,
-    delta_p_injector_bar: float,
     delta_p_bed_bar: float,
     ox_temp_in_K: float,
     h2o2_mass_frac_in: float,
@@ -88,7 +88,8 @@ def decompose_h2o2_stream(
     conv = _clamp01(decomp_conversion)
     eta = _clamp01(eta_decomp)
 
-    p_decomp_bar = float(Pc_bar) + float(delta_p_injector_bar) + float(delta_p_bed_bar)
+    delta_p_injector_bar = INJECTOR_DP_FRACTION_OF_PC * float(Pc_bar)
+    p_decomp_bar = float(Pc_bar) + delta_p_injector_bar + float(delta_p_bed_bar)
     t_eq_K = equilibrium_decomp_temperature_hp(
         pressure_bar=p_decomp_bar,
         ox_temp_in_K=float(ox_temp_in_K),
@@ -119,5 +120,6 @@ def decompose_h2o2_stream(
         "h2o_mass_frac_out": m_h2o_out / m_total,
         "o2_mass_frac_out": m_o2_out / m_total,
         "p_decomp_bar": p_decomp_bar,
+        "delta_p_injector_bar": delta_p_injector_bar,
         "ox_temp_eq_K": t_eq_K,
     }
