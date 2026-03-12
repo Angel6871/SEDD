@@ -43,7 +43,6 @@ H2O2_mass_frac: 0.98
 H2O_mass_frac: 0.02
 decomp_conversion: 0.98
 eta_decomp: 0.90
-delta_p_injector_bar: 4.0
 delta_p_bed_bar: 2.0
 
 # ================================
