@@ -1,12 +1,18 @@
 """
-Regenerative Cooling Channel Design Tool
+Regenerative Cooling Channel Design Tool — BARTZ EQUATION VERSION
 RP-1 / H2O2 Bipropellant Thruster — Inconel 718 Wall
 
 Methodology:
   - Cervone AE4903 Lecture 7 (TU Delft): 1D thermal resistance network
-  - Fagherazzi et al. Aerospace 2023: calibrated Nusselt for H2O2/hydrocarbon
+  - BARTZ EQUATION (Huzel & Huang): calibrated for rocket engine nozzles
   - Isentropic relations for axial gas conditions
   - Counter-flow coolant energy balance
+
+NOTE: This version replaces the Fagherazzi calibration with the classical
+      Bartz equation commonly used in rocket engine design.
+      Bartz: Nu = 0.023 * Re^0.8 * Pr^0.4 * (T_aw/T_c)^(-0.2)
+      Reference: Huzel & Huang, "Modern Engineering for Design of Liquid-
+      Propellant Rocket Engines"
 
 Constraints checked:
   1. T_hot_wall  < T_wall_limit   (Inconel 718 hot-side wall)
@@ -44,13 +50,6 @@ k_g         = mu_g * cp_g / Pr_g   # Gas thermal conductivity [W/m·K]
 
 mdot_total  = 0.5808          # Total propellant mass flow rate [kg/s]
 
-# Calibrated Nusselt coefficient for hot gas side
-# From Fagherazzi et al. 2023, eq.(19): Nu = C * Re^0.8 * Pr^0.4
-# Calibrated for H2O2 / hydrocarbon bi-propellant: C = 0.0296
-# This replaces the Bartz equation with an empirically-calibrated equivalent.
-# [UPDATE] Can adjust C if you have experimental data for your specific engine
-C_nusselt   = 0.0296
-
 
 # ====================================================================
 # SECTION 2 — COOLANT PROPERTIES (RP-1, liquid phase)
@@ -79,7 +78,7 @@ Pr_c            = cp_c * mu_c / k_c    # Prandtl number [-]
 #          k_wall range for Inconel 718: 11–16 W/m·K depending on temperature.
 
 t_wall          = 0.001     # Inner wall thickness [m]  (1 mm)
-k_wall          = 13.0      # Thermal conductivity [W/m·K]
+k_wall          = 14.9      # Thermal conductivity [W/m·K]
 
 
 # ====================================================================
@@ -87,7 +86,7 @@ k_wall          = 13.0      # Thermal conductivity [W/m·K]
 # ====================================================================
 # [UPDATE] Adjust limits when final material specs and RP-1 conditions are known.
 
-T_wall_limit    = 1573.0    # Inconel 718 max service temp (~1300 C) [K]
+T_wall_limit    = 1300.0    # Inconel 718 max service temp (~1300 C) [K]
 
 T_coking        = 700.0     # RP-1 coking limit on cold-wall surface [K]
                              # (~430 C = 703 K; conservative for turbulent flow)
@@ -199,13 +198,20 @@ def local_gas_conditions(radius):
 
 
 # ====================================================================
-# HOT GAS HEAT TRANSFER COEFFICIENT
+# HOT GAS HEAT TRANSFER COEFFICIENT — BARTZ EQUATION
 # ====================================================================
 
-def hot_gas_htc(radius):
+def hot_gas_htc(radius, T_aw):
     """
-    Calibrated Nusselt: Nu = C * Re^0.8 * Pr^0.4   (Fagherazzi 2023 eq.19)
+    Bartz equation for rocket engine nozzles (Huzel & Huang):
+    
+    Nu = 0.023 * Re^0.8 * Pr^0.4 * (T_aw / T_c)^(-0.2)
     h_g = Nu * k_g / D_local
+    
+    The temperature ratio (T_aw/T_c)^(-0.2) accounts for property variations
+    with temperature. T_aw is adiabatic wall temperature and T_c is total
+    flame temperature.
+    
     G = mdot_total / A_local varies axially → correct throat peak.
     """
     h_g = np.zeros(len(radius))
@@ -213,7 +219,10 @@ def hot_gas_htc(radius):
         D   = 2 * r
         G   = mdot_total / (np.pi * r**2)
         Re  = G * D / mu_g
-        Nu  = C_nusselt * Re**0.8 * Pr_g**0.4
+        # Temperature correction factor using adiabatic wall temperature
+        T_ratio = T_aw[i] / Tc
+        T_correction = T_ratio**(-0.2)
+        Nu  = 0.023 * Re**0.8 * Pr_g**0.4 * T_correction
         h_g[i] = Nu * k_g / D
     return h_g
 
@@ -398,7 +407,7 @@ def plot_results(x, radius, d, n_valid):
     fig = plt.figure(figsize=(15, 10))
     fig.suptitle(
         f"{status}  —  {d['N_ch']} ch × {d['s_mm']:.3f} mm square  |  "
-        f"RP-1/H2O2, Inconel 718  |  Re = {d['Re']:.0f}  V = {d['V']:.1f} m/s",
+        f"RP-1/H2O2, Inconel 718 (BARTZ)  |  Re = {d['Re']:.0f}  V = {d['V']:.1f} m/s",
         fontsize=11, fontweight='bold')
     gs = gridspec.GridSpec(2, 3, hspace=0.45, wspace=0.38)
 
@@ -466,7 +475,7 @@ def plot_results(x, radius, d, n_valid):
     def fmt(val, lim, label):
         mg = lim - val
         return f"{val:.0f} K  {'✓ +'+str(int(mg))+' K' if mg>0 else '⚠ '+str(int(mg))+' K'}"
-    txt = (f"DESIGN SUMMARY\n{'─'*36}\n"
+    txt = (f"DESIGN SUMMARY (BARTZ)\n{'─'*36}\n"
            f"N channels        : {d['N_ch']}\n"
            f"Channel size      : {d['s_mm']:.3f} mm (square)\n"
            f"Coolant Re        : {d['Re']:.0f}\n"
@@ -485,8 +494,8 @@ def plot_results(x, radius, d, n_valid):
             fontfamily='monospace',
             bbox=dict(boxstyle='round', fc=bg, alpha=0.95))
 
-    plt.savefig("cooling_design_result.png", dpi=150, bbox_inches='tight')
-    print("  Saved: cooling_design_result.png")
+    plt.savefig("cooling_design_result_bartz.png", dpi=150, bbox_inches='tight')
+    print("  Saved: cooling_design_result_bartz.png")
     plt.show()
 
 
@@ -504,11 +513,11 @@ def plot_design_space(valid):
     plt.colorbar(sc, ax=ax, label='Coking margin [K]')
     ax.set_xlabel("Number of channels")
     ax.set_ylabel("Channel side [mm]")
-    ax.set_title("Valid Design Space — Coking Safety Margin")
+    ax.set_title("Valid Design Space — Coking Safety Margin (BARTZ)")
     ax.grid(alpha=0.3)
     plt.tight_layout()
-    plt.savefig("design_space.png", dpi=150, bbox_inches='tight')
-    print("  Saved: design_space.png")
+    plt.savefig("design_space_bartz.png", dpi=150, bbox_inches='tight')
+    print("  Saved: design_space_bartz.png")
     plt.show()
 
 
@@ -520,6 +529,7 @@ if __name__ == "__main__":
 
     print("=" * 60)
     print("  Regenerative Cooling Design — RP-1 / H2O2 Thruster")
+    print("  --- BARTZ EQUATION VERSION ---")
     print("=" * 60)
     print(f"  Pc             = {Pc/1e6:.2f} MPa")
     print(f"  Tc             = {Tc:.0f} K")
@@ -540,9 +550,10 @@ if __name__ == "__main__":
     print(f"\n  T_aw : throat = {T_aw[i_t]:.0f} K  |  chamber = {T_aw[0]:.0f} K")
     print(f"  Mach : exit   = {M[-1]:.2f}")
 
-    # Hot gas HTC
-    h_g = hot_gas_htc(radius)
+    # Hot gas HTC — BARTZ EQUATION version
+    h_g = hot_gas_htc(radius, T_aw)
     print(f"  h_g  : throat = {h_g[i_t]:.0f} W/m²K  |  chamber = {h_g[0]:.0f} W/m²K")
+    print(f"  NOTE: h_g computed using BARTZ equation with T_aw/T_c correction")
 
     # Energy balance check
     energy_balance_report(x, radius, h_g, T_aw)
