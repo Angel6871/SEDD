@@ -516,6 +516,7 @@ def optimize_channels(x, radius, h_g, T_aw):
                     'T_cb_outlet' : T_cb[0],
                     'mg_wall'     : T_wall_limit - np.max(T_hw),
                     'mg_cok'      : T_coking     - np.max(T_cw),
+                    'mg_bulk'     : T_bulk_limit - np.max(T_cb),
                     'T_hw_arr'    : T_hw,
                     'T_cw_arr'    : T_cw,
                     'T_cb_arr'    : T_cb,
@@ -768,14 +769,16 @@ if __name__ == "__main__":
         writer.writerow([
             "N_channels", "w_chamber_mm", "w_throat_mm", "h_mm",
             "max_T_hot_wall_K", "max_T_cold_wall_K", "max_T_coolant_K",
-            "T_coolant_outlet_K"
+            "T_coolant_outlet_K",
+            "wall_margin_K", "coking_margin_K", "bulk_margin_K"
         ])
         for d in (valid if valid else [best]):
             writer.writerow([
                 d["N_ch"],
                 f"{d['w_ref_mm']:.4f}", f"{d['w_t_mm']:.4f}", f"{d['h_mm']:.4f}",
                 f"{d['max_T_hw']:.1f}", f"{d['max_T_cw']:.1f}", f"{d['max_T_cb']:.1f}",
-                f"{d['T_cb_outlet']:.1f}"
+                f"{d['T_cb_outlet']:.1f}",
+                f"{d['mg_wall']:.1f}", f"{d['mg_cok']:.1f}", f"{d['mg_bulk']:.1f}"
             ])
     print(f"  Saved: {csv_file}  ({len(valid if valid else [best])} rows)")
 
