@@ -70,7 +70,7 @@ mdot_total  = 0.5083         # Total propellant mass flow rate [kg/s]
 #   cp   : linear fit, moderate increase with temperature
 
 OF_ratio        = 2.872
-mdot_coolant    = mdot_total / (1.0 + OF_ratio)  # [kg/s]
+mdot_coolant    = (mdot_total / (1.0 + OF_ratio))  # [kg/s]
 
 T_coolant_in    = 298.0      # Coolant inlet temperature [K]
 
@@ -137,11 +137,11 @@ Re_min          = 4000       # Reported in output only — laminar fallback mean
 # [UPDATE] Replace with final nozzle design dimensions.
 
 D_t     = 2 * 0.01479        # Throat diameter [m]      (Rt = 14.79 mm)
-D_c     = 2 * 0.02767        # Chamber diameter [m]     (Rc = 27.67 mm)
+D_c     = 2 * 0.04        # Chamber diameter [m]     (Rc = 27.67 mm)
 AR_exit = (21.88 / 14.79)**2 # Exit area ratio [-]      (Re = 21.88 mm)
-L_con   = 0.03538            # Convergent section length [m]  (beta = 20 deg)
+L_con   = 0.06927            # Convergent section length [m]  (beta = 20 deg)
 L_div   = 0.02184            # Divergent section length [m]   (alpha = 18 deg)
-L_ch    = 0.39890            # Cylindrical chamber length [m]
+L_ch    = 0.22958               # Cylindrical chamber length [m]
 
 R_t     = D_t / 2
 R_c     = D_c / 2
@@ -162,7 +162,7 @@ AR_c    = (R_c / R_t)**2
 
 N_ch_min    = 40
 N_ch_max    = 40
-N_ch_step   = 1
+N_ch_step   = 2
 
 w_min_throat = 0.001                  # Manufacturing min channel width at throat [m]
 w_min        = w_min_throat * R_c / R_t  # Min w_ref so throat width ≥ w_min_throat
